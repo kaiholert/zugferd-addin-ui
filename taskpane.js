@@ -201,8 +201,18 @@ async function runExport() {
     // ── Schritt 3: An Server senden ───────────────────────────────────────
     showProgress('ZUGFeRD XML wird generiert und eingebettet…');
 
-    const safeName = (invoiceData.rechnung_nummer || 'Rechnung')
-      .replace(/[/\\?%*:|"<>]/g, '-');
+    // Dateiname: Leistungsmonat - Rechnungsnummer - Bestellnummer
+    const nameParts = [
+      invoiceData.leistungsmonat,
+      invoiceData.rechnung_nummer,
+      invoiceData.empfaenger_bestellnr,
+    ].filter(p => p && p.trim());  // leere Teile weglassen
+    const safeName = nameParts
+      .join('-')
+      .replace(/[/\\?%*:|"<>]/g, '_')  // ungueltige Zeichen ersetzen
+      .replace(/\s+/g, '_')             // Leerzeichen durch Unterstrich
+      .replace(/-+/g, '-')              // mehrfache Bindestriche bereinigen
+      .replace(/^-|-$/g, '');           // fuehrende/abschliessende Bindestriche
 
     const response = await fetch(`${SERVER_URL}/generate`, {
       method:  'POST',

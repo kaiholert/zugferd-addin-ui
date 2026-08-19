@@ -76,47 +76,64 @@ async function loadInvoiceData() {
 
       // ── Positionen: direkt aus der Word-Tabelle lesen ──────────────
       // Tabelle mit 7 Spalten suchen (Pos/Beschr/Menge/Einheit/Preis/MwSt/Betrag)
-      // Das funktioniert mit beliebig vielen Zeilen - einfach Zeilen in Word
-      // hinzufuegen oder loeschen, das Add-in liest alle automatisch aus.
+      // Spaltenanzahl via erste Zeile / Zellanzahl ermitteln (columnCount nicht
+      // direkt verfuegbar in Word JS API).
       const positions = [];
+      const POS_TABLE_COLS = 7;
+
       const tables = context.document.body.tables;
       tables.load('items');
       await context.sync();
 
-      // Positions-Tabelle: 7 Spalten, erste Zeile ist Header
-      const POS_TABLE_COLS = 7;
-      let posTable = null;
+      // Alle Tabellen-Zeilen vorladen um Spaltenanzahl zu ermitteln
       for (const tbl of tables.items) {
-        tbl.load('columnCount');
+        tbl.rows.load('items');
       }
       await context.sync();
+
+      // Erste Zeile jeder Tabelle laden
       for (const tbl of tables.items) {
-        if (tbl.columnCount === POS_TABLE_COLS) {
+        if (tbl.rows.items.length > 0) {
+          tbl.rows.items[0].cells.load('items');
+        }
+      }
+      await context.sync();
+
+      // Tabelle mit 7 Spalten finden
+      let posTable = null;
+      for (const tbl of tables.items) {
+        const firstRow = tbl.rows.items[0];
+        if (firstRow && firstRow.cells.items.length === POS_TABLE_COLS) {
           posTable = tbl;
           break;
         }
       }
 
       if (posTable) {
-        posTable.rows.load('items');
-        await context.sync();
         const rows = posTable.rows.items;
 
-        // Zeile 0 = Header, ab Zeile 1 = Daten
+        // Alle Zeilen-Zellen auf einmal laden (effizienter)
         for (let ri = 1; ri < rows.length; ri++) {
-          const row = rows[ri];
-          row.cells.load('items');
-          await context.sync();
-          const cells = row.cells.items;
+          rows[ri].cells.load('items');
+        }
+        await context.sync();
+
+        for (let ri = 1; ri < rows.length; ri++) {
+          const cells = rows[ri].cells.items;
           if (cells.length < POS_TABLE_COLS) continue;
 
           // Zelltexte laden
           for (const cell of cells) cell.load('value');
-          await context.sync();
+        }
+        await context.sync();
+
+        for (let ri = 1; ri < rows.length; ri++) {
+          const cells = rows[ri].cells.items;
+          if (cells.length < POS_TABLE_COLS) continue;
 
           const colText = cells.map(c => (c.value || '').trim());
 
-          // Leere Zeilen ueberspringen (weder Beschreibung noch Betrag)
+          // Leere Zeilen ueberspringen
           const beschr = colText[1] || '';
           const betrag = colText[6] || '';
           if (!beschr && !betrag) continue;
@@ -136,8 +153,9 @@ async function loadInvoiceData() {
             betrag:             colText[6] || '0,00',
           });
         }
+        console.log('[ZUGFeRD] Positionen gelesen:', positions.length);
       } else {
-        console.warn('[ZUGFeRD] Positionstabelle (7 Spalten) nicht gefunden.');
+        console.warn('[ZUGFeRD] Positionstabelle (7 Spalten) nicht gefunden. Tabellen:', tables.items.length);
       }
 
       // Rechnungsdaten zusammenstellen

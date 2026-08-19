@@ -176,78 +176,81 @@ function runInlineDiagnose() {
   var out = document.getElementById('diagnoseOutput');
   out.innerHTML = 'Lese Dokument...';
 
-  // Pruefe ob Word API verfuegbar
   if (typeof Word === 'undefined') {
-    out.innerHTML = '<p class="d-err">Word-API nicht verfuegbar.<br>' +
-      'Office.host=' + (Office && Office.context ? Office.context.host : 'n/a') + '<br>' +
-      'Bitte Add-in neu laden (Rechtsklick in Task Pane > Reload).</p>';
+    out.innerHTML = '<p class="d-err">Word-API nicht verfuegbar. Bitte Add-in neu laden.</p>';
     return;
   }
 
   Word.run(function(context) {
+    // 1. Content Controls laden
     var controls = context.document.contentControls;
     controls.load('tag, text, type');
+
+    // 2. Tabellen laden
+    var tables = context.document.body.tables;
+    tables.load('items');
+
     return context.sync().then(function() {
       var items = controls.items;
       var html  = '<p class="d-ok">Content Controls: ' + items.length + '</p>';
 
-      if (items.length === 0) {
-        html += '<p class="d-err">Keine Content Controls gefunden!<br>' +
-                'Ist Rechnungsvorlage_ZUGFeRD_ContentControls.docx offen?</p>';
-      } else {
-        // Alle Tags anzeigen
-        html += '<table><tr><th>Tag</th><th>Inhalt</th></tr>';
-        for (var i = 0; i < items.length; i++) {
-          var cc  = items[i];
-          var tag = cc.tag || '(kein Tag)';
-          var txt = (cc.text || '').substring(0, 50);
-          html += '<tr><td class="tag">' + dEsc(tag) + '</td><td>' + dEsc(txt) + '</td></tr>';
-        }
-        html += '</table>';
-
-        // Pflicht-Tags
-        var tagMap = {};
-        for (var j = 0; j < items.length; j++) {
-          if (items[j].tag) tagMap[items[j].tag] = items[j].text;
-        }
-        // pos_01_beschreibung entfernt - Positionen werden jetzt direkt aus Tabelle gelesen
-        var required = ['rechnung_nummer','rechnung_datum','empfaenger_firma',
-                        'summe_netto','summe_brutto'];
-        html += '<strong>Pflicht-Tags:</strong><table><tr><th>Tag</th><th>Status</th></tr>';
-        for (var k = 0; k < required.length; k++) {
-          var t   = required[k];
-          var found = t in tagMap;
-          var val   = tagMap[t] || '';
-          var cls   = found ? (val ? 'd-ok' : 'd-warn') : 'd-err';
-          var lbl   = found ? (val ? 'OK' : 'LEER') : 'FEHLT';
-          html += '<tr><td class="tag">' + dEsc(t) + '</td>' +
-                  '<td class="' + cls + '">' + lbl + '</td></tr>';
-        }
-        html += '</table>';
+      // Tags-Tabelle
+      html += '<table><tr><th>Tag</th><th>Inhalt</th></tr>';
+      for (var i = 0; i < items.length; i++) {
+        var tag = items[i].tag || '(kein Tag)';
+        var txt = (items[i].text || '').substring(0, 50);
+        html += '<tr><td class="tag">' + dEsc(tag) + '</td><td>' + dEsc(txt) + '</td></tr>';
       }
-      // Tabellen-Info
-      Word.run(function(ctx2) {
-        var tbls = ctx2.document.body.tables;
-        tbls.load('items');
-        return ctx2.sync().then(function() {
-          var loads = tbls.items.map(function(t) { t.load('columnCount'); return t; });
-          return ctx2.sync().then(function() {
-            var posTable = tbls.items.filter(function(t) { return t.columnCount === 7; });
-            html += '<p>Tabellen im Dokument: <strong>' + tbls.items.length + '</strong>';
-            html += ' &nbsp;|&nbsp; 7-Spalten-Tabelle (Positionen): <strong class="' + (posTable.length ? 'd-ok' : 'd-err') + '">' + (posTable.length ? 'gefunden' : 'NICHT GEFUNDEN') + '</strong></p>';
-            if (posTable.length) {
-              posTable[0].rows.load('items');
-              return ctx2.sync().then(function() {
-                html += '<p>Positions-Zeilen (inkl. Header): <strong>' + posTable[0].rows.items.length + '</strong></p>';
-                out.innerHTML = html;
-              });
-            } else {
-              out.innerHTML = html;
-            }
-          });
+      html += '</table>';
+
+      // Pflicht-Tags
+      var tagMap = {};
+      for (var j = 0; j < items.length; j++) {
+        if (items[j].tag) tagMap[items[j].tag] = items[j].text;
+      }
+      var required = ['rechnung_nummer','rechnung_datum','empfaenger_firma','summe_netto','summe_brutto'];
+      html += '<strong>Pflicht-Tags:</strong><table><tr><th>Tag</th><th>Status</th></tr>';
+      for (var k = 0; k < required.length; k++) {
+        var t     = required[k];
+        var found = t in tagMap;
+        var val   = tagMap[t] || '';
+        var cls   = found ? (val ? 'd-ok' : 'd-warn') : 'd-err';
+        var lbl   = found ? (val ? 'OK' : 'LEER') : 'FEHLT';
+        html += '<tr><td class="tag">' + dEsc(t) + '</td><td class="' + cls + '">' + lbl + '</td></tr>';
+      }
+      html += '</table>';
+
+      // Tabellen-Uebersicht (Spalten via erste Zeile zaehlen)
+      var tblItems = tables.items;
+      var rowLoads = [];
+      for (var ti = 0; ti < tblItems.length; ti++) {
+        tblItems[ti].rows.load('items');
+      }
+      return context.sync().then(function() {
+        var cellLoads = [];
+        for (var ti = 0; ti < tblItems.length; ti++) {
+          if (tblItems[ti].rows.items.length > 0) {
+            tblItems[ti].rows.items[0].cells.load('items');
+          }
+        }
+        return context.sync().then(function() {
+          html += '<strong>Tabellen:</strong><table><tr><th>#</th><th>Spalten</th><th>Zeilen</th><th>Status</th></tr>';
+          var posFound = false;
+          for (var ti = 0; ti < tblItems.length; ti++) {
+            var firstRow = tblItems[ti].rows.items[0];
+            var cols = firstRow ? firstRow.cells.items.length : '?';
+            var rowCount = tblItems[ti].rows.items.length;
+            var isPos = (cols === 7);
+            if (isPos) posFound = true;
+            html += '<tr><td>' + ti + '</td><td>' + cols + '</td><td>' + rowCount + '</td>' +
+                    '<td class="' + (isPos ? 'd-ok' : '') + '">' + (isPos ? 'Positionen' : '-') + '</td></tr>';
+          }
+          html += '</table>';
+          html += '<p>7-Spalten-Tabelle: <strong class="' + (posFound ? 'd-ok' : 'd-err') + '">' +
+                  (posFound ? 'gefunden' : 'NICHT GEFUNDEN') + '</strong></p>';
+          out.innerHTML = html;
         });
-      }).catch(function(e) { out.innerHTML = html + '<p class="d-warn">Tabellen-Check: ' + dEsc(e.message) + '</p>'; });
-    });
+      });
     });
   }).catch(function(err) {
     out.innerHTML = '<p class="d-err">Fehler: ' + dEsc(err.message) + '</p>';

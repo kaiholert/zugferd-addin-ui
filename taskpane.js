@@ -74,39 +74,70 @@ async function loadInvoiceData() {
         }
       }
 
-      // Positionen dynamisch sammeln (pos_01_*, pos_02_*, ...)
+      // ── Positionen: direkt aus der Word-Tabelle lesen ──────────────
+      // Tabelle mit 7 Spalten suchen (Pos/Beschr/Menge/Einheit/Preis/MwSt/Betrag)
+      // Das funktioniert mit beliebig vielen Zeilen - einfach Zeilen in Word
+      // hinzufuegen oder loeschen, das Add-in liest alle automatisch aus.
       const positions = [];
-      let posIdx = 1;
-      while (true) {
-        const key    = String(posIdx).padStart(2, '0');
-        const prefix = `pos_${key}_`;
-        const nr     = cc[`${prefix}pos_nr`];
-        // Abbruch wenn keine Nummer und keine Beschreibung vorhanden
-        if (nr === undefined && cc[`${prefix}beschreibung`] === undefined) break;
+      const tables = context.document.body.tables;
+      tables.load('items');
+      await context.sync();
 
-        const beschrRaw = cc[`${prefix}beschreibung`] || '';
-        // Beschreibung kann mehrzeilig sein: erste Zeile = Titel, Rest = Detail
-        const lines     = beschrRaw.split('\n').map(l => l.trim()).filter(Boolean);
+      // Positions-Tabelle: 7 Spalten, erste Zeile ist Header
+      const POS_TABLE_COLS = 7;
+      let posTable = null;
+      for (const tbl of tables.items) {
+        tbl.load('columnCount');
+      }
+      await context.sync();
+      for (const tbl of tables.items) {
+        if (tbl.columnCount === POS_TABLE_COLS) {
+          posTable = tbl;
+          break;
+        }
+      }
 
-        const pos = {
-          pos_nr:             nr || String(posIdx),
-          beschreibung:       beschrRaw,
-          beschreibung_titel: lines[0] || '',
-          beschreibung_detail:lines.slice(1).join(' ') || '',
-          menge:              cc[`${prefix}menge`]       || '0',
-          einheit:            cc[`${prefix}einheit`]     || 'Stk.',
-          einzelpreis:        cc[`${prefix}einzelpreis`] || '0,00',
-          mwst_satz:          cc[`${prefix}mwst_satz`]  || '19 %',
-          betrag:             cc[`${prefix}betrag`]      || '0,00',
-        };
+      if (posTable) {
+        posTable.rows.load('items');
+        await context.sync();
+        const rows = posTable.rows.items;
 
-        // Leere Positionen (kein Betrag, kein Name) überspringen
-        const hasContent = pos.beschreibung_titel || parseGermanFloat(pos.betrag) > 0;
-        if (hasContent) positions.push(pos);
+        // Zeile 0 = Header, ab Zeile 1 = Daten
+        for (let ri = 1; ri < rows.length; ri++) {
+          const row = rows[ri];
+          row.cells.load('items');
+          await context.sync();
+          const cells = row.cells.items;
+          if (cells.length < POS_TABLE_COLS) continue;
 
-        posIdx++;
-        // Sicherheits-Abbruch nach 100 Positionen
-        if (posIdx > 100) break;
+          // Zelltexte laden
+          for (const cell of cells) cell.load('value');
+          await context.sync();
+
+          const colText = cells.map(c => (c.value || '').trim());
+
+          // Leere Zeilen ueberspringen (weder Beschreibung noch Betrag)
+          const beschr = colText[1] || '';
+          const betrag = colText[6] || '';
+          if (!beschr && !betrag) continue;
+
+          // Beschreibung: erste Zeile = Titel, weitere = Detail
+          const lines = beschr.split('\n').map(l => l.trim()).filter(Boolean);
+
+          positions.push({
+            pos_nr:             colText[0] || String(ri),
+            beschreibung:       beschr,
+            beschreibung_titel: lines[0] || beschr,
+            beschreibung_detail:lines.slice(1).join(' ') || '',
+            menge:              colText[2] || '0',
+            einheit:            colText[3] || 'Stk.',
+            einzelpreis:        colText[4] || '0,00',
+            mwst_satz:          colText[5] || '19 %',
+            betrag:             colText[6] || '0,00',
+          });
+        }
+      } else {
+        console.warn('[ZUGFeRD] Positionstabelle (7 Spalten) nicht gefunden.');
       }
 
       // Rechnungsdaten zusammenstellen

@@ -112,15 +112,15 @@ async function loadInvoiceData() {
       // Rechnungsdaten zusammenstellen
       invoiceData = {
         // Rechnungsdetails
-        rechnung_nummer:   cc['rechnung_nummer']   || '',
-        rechnung_datum:    cc['rechnung_datum']    || '',
-        lieferdatum:       cc['lieferdatum']       || '',
-        faelligkeitsdatum: cc['faelligkeitsdatum'] || '',
-        zahlungsziel:      cc['zahlungsziel']      || '',
-        leistungsort:      cc['leistungsort']      || '',
-        leistungsmonat:    cc['leistungsmonat']    || '',
-        waehrung:          cc['waehrung']          || 'EUR',
-        sprache:           cc['sprache']           || 'Deutsch',
+        rechnung_nummer:   extractValue(cc['rechnung_nummer']   || ''),
+        rechnung_datum:    extractValue(cc['rechnung_datum']    || ''),
+        lieferdatum:       extractValue(cc['lieferdatum']       || ''),
+        faelligkeitsdatum: extractValue(cc['faelligkeitsdatum'] || ''),
+        zahlungsziel:      extractValue(cc['zahlungsziel']      || ''),
+        leistungsort:      extractValue(cc['leistungsort']      || ''),
+        leistungsmonat:    extractValue(cc['leistungsmonat']    || ''),
+        waehrung:          extractValue(cc['waehrung']          || 'EUR'),
+        sprache:           extractValue(cc['sprache']      || 'Deutsch'),
 
         // Empfänger
         empfaenger_firma:           cc['empfaenger_firma']           || '',
@@ -129,9 +129,9 @@ async function loadInvoiceData() {
         empfaenger_plz_ort:         cc['empfaenger_plz_ort']         || '',
         empfaenger_land:            cc['empfaenger_land']            || 'Deutschland',
         empfaenger_land_code:       countryCode(cc['empfaenger_land'] || 'Deutschland'),
-        empfaenger_ust_id:          cc['empfaenger_ust_id']          || '',
-        empfaenger_kundennr:        cc['empfaenger_kundennr']        || '',
-        empfaenger_bestellnr:       cc['empfaenger_bestellnr']       || '',
+        empfaenger_ust_id:          extractEmpfaengerValue(cc['empfaenger_ust_id'] || '', ['USt-ID Empfänger:', 'USt-ID Empfaenger:']),
+        empfaenger_kundennr:        extractEmpfaengerValue(cc['empfaenger_kundennr'] || '', ['Kunden-Nr.:']),
+        empfaenger_bestellnr:       extractEmpfaengerValue(cc['empfaenger_bestellnr'] || '', ['Ihre Bestellnummer:']),
 
         // Summen
         summe_netto:    cc['summe_netto']    || '0,00',
@@ -367,4 +367,21 @@ function showError(msg) {
 }
 function hideResult() {
   resultDiv.style.display = 'none';
+}
+
+// Extrahiert Wert aus "Label:Wert" String - z.B. "Rechnungsnummer:RE-2024-0001" -> "RE-2024-0001"
+function extractValue(text) {
+  if (!text) return '';
+  const colonIdx = text.indexOf(':');
+  if (colonIdx === -1) return text.trim();
+  return text.slice(colonIdx + 1).trim();
+}
+
+// Bereinigt Empfaenger-Felder mit Label-Prefix
+function extractEmpfaengerValue(text, prefixes) {
+  if (!text) return text;
+  for (const prefix of prefixes) {
+    if (text.startsWith(prefix)) return text.slice(prefix.length).trim();
+  }
+  return text.trim();
 }

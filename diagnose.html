@@ -2,118 +2,174 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8"/>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <title>ZUGFeRD Diagnose</title>
-  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" type="text/javascript"></script>
   <style>
     body { font-family: "Segoe UI", sans-serif; font-size: 12px; padding: 12px; color: #323130; }
-    h2   { font-size: 14px; color: #1F4E79; margin: 0 0 8px; }
+    h2   { font-size: 14px; color: #1F4E79; margin: 0 0 10px; }
     .ok  { color: #107C10; font-weight: 600; }
     .err { color: #C00;    font-weight: 600; }
     .warn{ color: #B95000; font-weight: 600; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-    th    { background: #D6E4F0; color: #1F4E79; text-align: left; padding: 4px 6px; font-size: 11px; }
-    td    { padding: 3px 6px; border-bottom: 1px solid #EDEBE9; font-size: 11px; vertical-align: top; }
-    td.tag{ font-family: monospace; color: #1F4E79; }
-    td.val{ max-width: 160px; word-break: break-all; }
-    .empty{ color: #a19f9d; font-style: italic; }
-    #log  { background: #f3f2f1; padding: 8px; border-radius: 3px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
-    button{ background:#1F4E79; color:#fff; border:none; padding:6px 12px; border-radius:3px; cursor:pointer; margin-bottom:12px; font-size:12px; }
+    .box { background:#f3f2f1; border-radius:4px; padding:10px; margin-bottom:12px; font-size:11px; line-height:1.8; }
+    table{ width:100%; border-collapse:collapse; margin-bottom:12px; font-size:11px; }
+    th   { background:#D6E4F0; color:#1F4E79; text-align:left; padding:4px 6px; }
+    td   { padding:3px 6px; border-bottom:1px solid #EDEBE9; vertical-align:top; }
+    td.tag { font-family:monospace; color:#1F4E79; }
+    button { background:#1F4E79; color:#fff; border:none; padding:7px 14px; border-radius:3px; cursor:pointer; margin-bottom:12px; font-size:12px; margin-right:6px; }
+    button.sec { background:#2E75B6; }
+    #status { margin-bottom: 10px; }
   </style>
 </head>
 <body>
 <h2>ZUGFeRD Diagnose</h2>
-<button onclick="runDiagnose()">Diagnose starten</button>
-<div id="output">Bitte Button klicken...</div>
+<div id="status" class="box">Warte auf Office.onReady...</div>
+<button onclick="runDiagnose()">Dokument analysieren</button>
+<button class="sec" onclick="showContext()">Office-Kontext pruefen</button>
+<div id="output"></div>
 
-<script>
-Office.onReady(info => {
-  document.getElementById('output').innerHTML =
-    '<span class="' + (info.host === Office.HostType.Word ? 'ok' : 'err') + '">' +
-    'Office.onReady: host=' + info.host + ', platform=' + info.platform + '</span>';
+<script type="text/javascript">
+// Globaler Status
+var officeReady = false;
+var officeHost  = null;
+var wordAvailable = false;
+
+// Office.onReady abwarten
+Office.onReady(function(info) {
+  officeReady   = true;
+  officeHost    = info.host;
+  wordAvailable = (typeof Word !== 'undefined');
+
+  var statusEl = document.getElementById('status');
+  var lines = [];
+  lines.push('Office.onReady: <span class="ok">OK</span>');
+  lines.push('Host: <strong>' + (info.host || 'unbekannt') + '</strong>');
+  lines.push('Platform: <strong>' + (info.platform || 'unbekannt') + '</strong>');
+  lines.push('Word-API verfuegbar: <span class="' + (wordAvailable ? 'ok' : 'err') + '">' + (wordAvailable ? 'JA' : 'NEIN') + '</span>');
+
+  if (!wordAvailable) {
+    lines.push('<span class="err">Word-API fehlt - moegliche Ursachen siehe unten</span>');
+  }
+
+  statusEl.innerHTML = lines.join('<br>');
 });
 
-async function runDiagnose() {
-  const out = document.getElementById('output');
-  out.innerHTML = 'Lese Dokument...';
-  let html = '';
+function showContext() {
+  var out = document.getElementById('output');
+  var lines = [];
 
+  lines.push('<table><tr><th>Eigenschaft</th><th>Wert</th></tr>');
+
+  // Office global
+  lines.push('<tr><td>typeof Office</td><td>' + typeof Office + '</td></tr>');
+  lines.push('<tr><td>typeof Word</td><td class="' + (typeof Word !== 'undefined' ? 'ok' : 'err') + '">' + typeof Word + '</td></tr>');
+  lines.push('<tr><td>Office.context vorhanden</td><td>' + (Office.context ? 'ja' : 'nein') + '</td></tr>');
+
+  if (Office.context) {
+    try { lines.push('<tr><td>contentLanguage</td><td>' + Office.context.contentLanguage + '</td></tr>'); } catch(e) {}
+    try { lines.push('<tr><td>displayLanguage</td><td>' + Office.context.displayLanguage + '</td></tr>'); } catch(e) {}
+    try {
+      var req = Office.context.requirements;
+      if (req) lines.push('<tr><td>requirements</td><td>' + JSON.stringify(req) + '</td></tr>');
+    } catch(e) {}
+  }
+
+  // URL Info
+  lines.push('<tr><td>Aktuelle URL</td><td style="word-break:break-all">' + window.location.href + '</td></tr>');
+  lines.push('<tr><td>User Agent</td><td style="word-break:break-all;font-size:10px">' + navigator.userAgent + '</td></tr>');
+
+  // Office.js Version
   try {
-    await Word.run(async context => {
+    lines.push('<tr><td>Office.js context.host</td><td>' + Office.context.host + '</td></tr>');
+  } catch(e) {
+    lines.push('<tr><td>Office.js context.host</td><td class="warn">nicht lesbar: ' + e.message + '</td></tr>');
+  }
 
-      // ── 1. Alle Content Controls laden ──────────────────────────
-      const controls = context.document.contentControls;
-      controls.load('tag, text, title, type, id');
-      await context.sync();
+  lines.push('</table>');
 
-      const items = controls.items;
+  // Wenn Word nicht verfuegbar: Erklaerung
+  if (typeof Word === 'undefined') {
+    lines.push('<div class="box"><span class="err">Word-API nicht geladen.</span><br><br>');
+    lines.push('Moegliche Ursachen:<br>');
+    lines.push('1. <strong>Office.js Versionsproblem</strong>: Versuche in taskpane.html die Office.js URL zu aendern auf:<br>');
+    lines.push('&nbsp;&nbsp;<code>https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js</code><br><br>');
+    lines.push('2. <strong>Requirement Set</strong>: Die Word-API wird moeglicherweise von dieser Office-Version nicht unterstuetzt.<br><br>');
+    lines.push('3. <strong>Cache-Problem</strong>: clear-office-cache.bat erneut ausfuehren.<br><br>');
+    lines.push('4. <strong>Host-Erkennung</strong>: Office erkennt die Umgebung nicht als Word (Host = ' + (officeHost || 'null') + ').</div>');
+  }
+
+  out.innerHTML = lines.join('');
+}
+
+function runDiagnose() {
+  var out = document.getElementById('output');
+
+  if (!officeReady) {
+    out.innerHTML = '<p class="err">Office noch nicht bereit - bitte kurz warten und erneut versuchen.</p>';
+    return;
+  }
+
+  if (typeof Word === 'undefined') {
+    out.innerHTML = '<p class="err">Word-API nicht verfuegbar.<br>Bitte zuerst "Office-Kontext pruefen" klicken fuer Details.</p>';
+    showContext();
+    return;
+  }
+
+  out.innerHTML = '<p>Lese Content Controls...</p>';
+
+  Word.run(function(context) {
+    var controls = context.document.contentControls;
+    controls.load('tag, text, title, type, id');
+    return context.sync().then(function() {
+      var items = controls.items;
+      var html  = '';
+
       html += '<p class="ok">Gefunden: ' + items.length + ' Content Control(s)</p>';
 
       if (items.length === 0) {
-        html += '<p class="err">KEIN Content Control gefunden!<br>';
-        html += 'Pruefe ob die richtige Datei geoeffnet ist:<br>';
-        html += 'Rechnungsvorlage_ZUGFeRD_ContentControls.docx</p>';
+        html += '<p class="err">Keine Content Controls gefunden!<br>';
+        html += 'Bitte pruefen ob die Datei<br>';
+        html += '<strong>Rechnungsvorlage_ZUGFeRD_ContentControls.docx</strong><br>';
+        html += 'geoeffnet ist (nicht die Version ohne ContentControls).</p>';
       } else {
-        // Tabelle aller gefundenen Controls
-        html += '<table><tr><th>Tag</th><th>Typ</th><th>Inhalt</th></tr>';
-        for (const cc of items) {
-          const tag  = cc.tag  || '<span class="empty">(kein Tag)</span>';
-          const text = cc.text || '<span class="empty">(leer)</span>';
-          const type = cc.type || '?';
-          html += '<tr><td class="tag">' + escHtml(cc.tag || '') + '</td>' +
-                  '<td>' + type + '</td>' +
-                  '<td class="val">' + escHtml(cc.text || '') + '</td></tr>';
+        html += '<table><tr><th>Tag</th><th>Typ</th><th>Inhalt (gekuerzt)</th></tr>';
+        for (var i = 0; i < items.length; i++) {
+          var cc  = items[i];
+          var tag = cc.tag  || '(kein Tag)';
+          var txt = (cc.text || '').substring(0, 60);
+          html += '<tr><td class="tag">' + esc(tag) + '</td><td>' + esc(cc.type) + '</td><td>' + esc(txt) + '</td></tr>';
         }
         html += '</table>';
 
-        // ── 2. Pflicht-Tags pruefen ──────────────────────────────
-        const REQUIRED = [
-          'rechnung_nummer', 'rechnung_datum', 'empfaenger_firma',
-          'summe_netto', 'summe_brutto', 'pos_01_beschreibung'
-        ];
-        const tagMap = {};
-        for (const cc of items) { if (cc.tag) tagMap[cc.tag] = cc.text; }
+        // Pflicht-Tags
+        var tagMap = {};
+        for (var j = 0; j < items.length; j++) {
+          if (items[j].tag) tagMap[items[j].tag] = items[j].text;
+        }
 
-        html += '<p><strong>Pflicht-Tags Pruefung:</strong></p><table>';
-        html += '<tr><th>Tag</th><th>Status</th><th>Wert</th></tr>';
-        for (const tag of REQUIRED) {
-          const found = tag in tagMap;
-          const val   = tagMap[tag] || '';
-          html += '<tr><td class="tag">' + tag + '</td>' +
-                  '<td class="' + (found ? (val ? 'ok' : 'warn') : 'err') + '">' +
-                  (found ? (val ? 'OK' : 'LEER') : 'FEHLT') + '</td>' +
-                  '<td class="val">' + escHtml(val) + '</td></tr>';
+        var required = ['rechnung_nummer','rechnung_datum','empfaenger_firma','summe_netto','summe_brutto','pos_01_beschreibung'];
+        html += '<strong>Pflicht-Tags:</strong><table><tr><th>Tag</th><th>Status</th><th>Wert</th></tr>';
+        for (var k = 0; k < required.length; k++) {
+          var t   = required[k];
+          var found = t in tagMap;
+          var val   = tagMap[t] || '';
+          var cls   = found ? (val ? 'ok' : 'warn') : 'err';
+          var lbl   = found ? (val ? 'OK' : 'LEER') : 'FEHLT';
+          html += '<tr><td class="tag">' + esc(t) + '</td><td class="' + cls + '">' + lbl + '</td><td>' + esc(val.substring(0,40)) + '</td></tr>';
         }
         html += '</table>';
-
-        // ── 3. Positionen zaehlen ────────────────────────────────
-        let posCount = 0;
-        for (let i = 1; i <= 100; i++) {
-          const key = 'pos_' + String(i).padStart(2,'0') + '_betrag';
-          if (key in tagMap) posCount = i; else break;
-        }
-        html += '<p>Erkannte Positionen: <strong>' + posCount + '</strong></p>';
       }
 
-      // ── 4. Dokument-Metadaten ────────────────────────────────────
-      const body = context.document.body;
-      body.load('text');
-      await context.sync();
-      html += '<p>Dokument-Text (erste 100 Zeichen):<br>';
-      html += '<code>' + escHtml(body.text.substring(0, 100)) + '</code></p>';
-
+      out.innerHTML = html;
     });
-  } catch (err) {
-    html += '<p class="err">FEHLER beim Word.run:<br>' + escHtml(err.message) + '</p>';
-    html += '<p>Stack:<br><code>' + escHtml(err.stack || '') + '</code></p>';
-  }
-
-  out.innerHTML = html;
+  }).catch(function(err) {
+    out.innerHTML = '<p class="err">Fehler in Word.run:<br>' + esc(err.message) + '</p>' +
+                    '<p><code>' + esc(err.stack || '') + '</code></p>';
+  });
 }
 
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 </script>
 </body>

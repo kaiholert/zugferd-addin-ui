@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8"/>
+  <title>ZUGFeRD Diagnose</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <style>
+    body { font-family: "Segoe UI", sans-serif; font-size: 12px; padding: 12px; color: #323130; }
+    h2   { font-size: 14px; color: #1F4E79; margin: 0 0 8px; }
+    .ok  { color: #107C10; font-weight: 600; }
+    .err { color: #C00;    font-weight: 600; }
+    .warn{ color: #B95000; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    th    { background: #D6E4F0; color: #1F4E79; text-align: left; padding: 4px 6px; font-size: 11px; }
+    td    { padding: 3px 6px; border-bottom: 1px solid #EDEBE9; font-size: 11px; vertical-align: top; }
+    td.tag{ font-family: monospace; color: #1F4E79; }
+    td.val{ max-width: 160px; word-break: break-all; }
+    .empty{ color: #a19f9d; font-style: italic; }
+    #log  { background: #f3f2f1; padding: 8px; border-radius: 3px; font-family: monospace; font-size: 11px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+    button{ background:#1F4E79; color:#fff; border:none; padding:6px 12px; border-radius:3px; cursor:pointer; margin-bottom:12px; font-size:12px; }
+  </style>
+</head>
+<body>
+<h2>ZUGFeRD Diagnose</h2>
+<button onclick="runDiagnose()">Diagnose starten</button>
+<div id="output">Bitte Button klicken...</div>
+
+<script>
+Office.onReady(info => {
+  document.getElementById('output').innerHTML =
+    '<span class="' + (info.host === Office.HostType.Word ? 'ok' : 'err') + '">' +
+    'Office.onReady: host=' + info.host + ', platform=' + info.platform + '</span>';
+});
+
+async function runDiagnose() {
+  const out = document.getElementById('output');
+  out.innerHTML = 'Lese Dokument...';
+  let html = '';
+
+  try {
+    await Word.run(async context => {
+
+      // ── 1. Alle Content Controls laden ──────────────────────────
+      const controls = context.document.contentControls;
+      controls.load('tag, text, title, type, id');
+      await context.sync();
+
+      const items = controls.items;
+      html += '<p class="ok">Gefunden: ' + items.length + ' Content Control(s)</p>';
+
+      if (items.length === 0) {
+        html += '<p class="err">KEIN Content Control gefunden!<br>';
+        html += 'Pruefe ob die richtige Datei geoeffnet ist:<br>';
+        html += 'Rechnungsvorlage_ZUGFeRD_ContentControls.docx</p>';
+      } else {
+        // Tabelle aller gefundenen Controls
+        html += '<table><tr><th>Tag</th><th>Typ</th><th>Inhalt</th></tr>';
+        for (const cc of items) {
+          const tag  = cc.tag  || '<span class="empty">(kein Tag)</span>';
+          const text = cc.text || '<span class="empty">(leer)</span>';
+          const type = cc.type || '?';
+          html += '<tr><td class="tag">' + escHtml(cc.tag || '') + '</td>' +
+                  '<td>' + type + '</td>' +
+                  '<td class="val">' + escHtml(cc.text || '') + '</td></tr>';
+        }
+        html += '</table>';
+
+        // ── 2. Pflicht-Tags pruefen ──────────────────────────────
+        const REQUIRED = [
+          'rechnung_nummer', 'rechnung_datum', 'empfaenger_firma',
+          'summe_netto', 'summe_brutto', 'pos_01_beschreibung'
+        ];
+        const tagMap = {};
+        for (const cc of items) { if (cc.tag) tagMap[cc.tag] = cc.text; }
+
+        html += '<p><strong>Pflicht-Tags Pruefung:</strong></p><table>';
+        html += '<tr><th>Tag</th><th>Status</th><th>Wert</th></tr>';
+        for (const tag of REQUIRED) {
+          const found = tag in tagMap;
+          const val   = tagMap[tag] || '';
+          html += '<tr><td class="tag">' + tag + '</td>' +
+                  '<td class="' + (found ? (val ? 'ok' : 'warn') : 'err') + '">' +
+                  (found ? (val ? 'OK' : 'LEER') : 'FEHLT') + '</td>' +
+                  '<td class="val">' + escHtml(val) + '</td></tr>';
+        }
+        html += '</table>';
+
+        // ── 3. Positionen zaehlen ────────────────────────────────
+        let posCount = 0;
+        for (let i = 1; i <= 100; i++) {
+          const key = 'pos_' + String(i).padStart(2,'0') + '_betrag';
+          if (key in tagMap) posCount = i; else break;
+        }
+        html += '<p>Erkannte Positionen: <strong>' + posCount + '</strong></p>';
+      }
+
+      // ── 4. Dokument-Metadaten ────────────────────────────────────
+      const body = context.document.body;
+      body.load('text');
+      await context.sync();
+      html += '<p>Dokument-Text (erste 100 Zeichen):<br>';
+      html += '<code>' + escHtml(body.text.substring(0, 100)) + '</code></p>';
+
+    });
+  } catch (err) {
+    html += '<p class="err">FEHLER beim Word.run:<br>' + escHtml(err.message) + '</p>';
+    html += '<p>Stack:<br><code>' + escHtml(err.stack || '') + '</code></p>';
+  }
+
+  out.innerHTML = html;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

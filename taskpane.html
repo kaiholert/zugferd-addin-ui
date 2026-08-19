@@ -210,8 +210,9 @@ function runInlineDiagnose() {
         for (var j = 0; j < items.length; j++) {
           if (items[j].tag) tagMap[items[j].tag] = items[j].text;
         }
+        // pos_01_beschreibung entfernt - Positionen werden jetzt direkt aus Tabelle gelesen
         var required = ['rechnung_nummer','rechnung_datum','empfaenger_firma',
-                        'summe_netto','summe_brutto','pos_01_beschreibung'];
+                        'summe_netto','summe_brutto'];
         html += '<strong>Pflicht-Tags:</strong><table><tr><th>Tag</th><th>Status</th></tr>';
         for (var k = 0; k < required.length; k++) {
           var t   = required[k];
@@ -224,7 +225,29 @@ function runInlineDiagnose() {
         }
         html += '</table>';
       }
-      out.innerHTML = html;
+      // Tabellen-Info
+      Word.run(function(ctx2) {
+        var tbls = ctx2.document.body.tables;
+        tbls.load('items');
+        return ctx2.sync().then(function() {
+          var loads = tbls.items.map(function(t) { t.load('columnCount'); return t; });
+          return ctx2.sync().then(function() {
+            var posTable = tbls.items.filter(function(t) { return t.columnCount === 7; });
+            html += '<p>Tabellen im Dokument: <strong>' + tbls.items.length + '</strong>';
+            html += ' &nbsp;|&nbsp; 7-Spalten-Tabelle (Positionen): <strong class="' + (posTable.length ? 'd-ok' : 'd-err') + '">' + (posTable.length ? 'gefunden' : 'NICHT GEFUNDEN') + '</strong></p>';
+            if (posTable.length) {
+              posTable[0].rows.load('items');
+              return ctx2.sync().then(function() {
+                html += '<p>Positions-Zeilen (inkl. Header): <strong>' + posTable[0].rows.items.length + '</strong></p>';
+                out.innerHTML = html;
+              });
+            } else {
+              out.innerHTML = html;
+            }
+          });
+        });
+      }).catch(function(e) { out.innerHTML = html + '<p class="d-warn">Tabellen-Check: ' + dEsc(e.message) + '</p>'; });
+    });
     });
   }).catch(function(err) {
     out.innerHTML = '<p class="d-err">Fehler: ' + dEsc(err.message) + '</p>';

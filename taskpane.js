@@ -122,10 +122,13 @@ async function loadInvoiceData() {
         }
       }
 
+      // Betrag-Zellen merken fuer späteres Zurückschreiben
+      const betragZellen = []; // { cell, rowIdx }
+
       if (posTable) {
         const rows = posTable.rows.items;
 
-        // Alle Zeilen-Zellen auf einmal laden (effizienter)
+        // Alle Zeilen-Zellen laden
         for (let ri = 1; ri < rows.length; ri++) {
           rows[ri].cells.load('items');
         }
@@ -134,8 +137,6 @@ async function loadInvoiceData() {
         for (let ri = 1; ri < rows.length; ri++) {
           const cells = rows[ri].cells.items;
           if (cells.length < POS_TABLE_COLS) continue;
-
-          // Zelltexte laden
           for (const cell of cells) cell.load('value');
         }
         await context.sync();
@@ -148,8 +149,7 @@ async function loadInvoiceData() {
 
           // Leere Zeilen ueberspringen
           const beschr = colText[1] || '';
-          const betrag = colText[6] || '';
-          if (!beschr && !betrag) continue;
+          if (!beschr && !parseGermanFloat(colText[6])) continue;
 
           // Beschreibung: erste Zeile = Titel, weitere = Detail
           const lines = beschr.split('\n').map(l => l.trim()).filter(Boolean);
@@ -165,6 +165,9 @@ async function loadInvoiceData() {
             mwst_satz:          colText[5] || '19 %',
             betrag:             colText[6] || '0,00',
           });
+
+          // Betrag-Zelle (Spalte 6) fuer späteres Zurückschreiben merken
+          betragZellen.push({ cell: cells[6], posIdx: positions.length - 1 });
         }
         console.log('[ZUGFeRD] Positionen gelesen:', positions.length);
       } else {
@@ -195,13 +198,24 @@ async function loadInvoiceData() {
       let nettoGesamt = 0;
       const mwstGruppen = {}; // { '19': { basis: 0, steuer: 0 }, ... }
 
-      for (const pos of positions) {
+      for (let idx = 0; idx < positions.length; idx++) {
+        const pos = positions[idx];
         const menge      = parseDE(pos.menge);
         const einzelpreis= parseDE(pos.einzelpreis);
         const zeilenbetrag = Math.round(menge * einzelpreis * 100) / 100;
 
-        // Berechneten Betrag in Position eintragen (ueberschreibt eingetippten Wert)
+        // Berechneten Betrag in Position eintragen
         pos.betrag = fmtDE(zeilenbetrag);
+
+        // Betrag direkt in Tabellenzelle schreiben
+        const zelle = betragZellen.find(z => z.posIdx === idx);
+        if (zelle) {
+          try {
+            zelle.cell.body.insertText(fmtDE(zeilenbetrag), 'Replace');
+          } catch(e) {
+            console.warn('[ZUGFeRD] Betrag-Zelle nicht beschreibbar:', e.message);
+          }
+        }
 
         nettoGesamt += zeilenbetrag;
 
@@ -232,7 +246,10 @@ async function loadInvoiceData() {
         'summe_brutto':  fmtDE(bruttoGesamt),
       };
 
-      // Controls aktualisieren
+      // Betrag-Zellen in Tabelle synchronisieren
+      await context.sync();
+
+      // Summen-Controls aktualisieren
       for (const ctrl of controls.items) {
         if (ctrl.tag in summenMap) {
           try {

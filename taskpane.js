@@ -48,6 +48,19 @@ Office.onReady(info => {
   // Export-Button
   exportBtn.addEventListener('click', runExport);
 
+  // Neu berechnen Button
+  document.getElementById('recalcBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('recalcBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Berechne...';
+    try {
+      await loadInvoiceData();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '↻ Neu berechnen';
+    }
+  });
+
   // Content Controls lesen
   loadInvoiceData();
 
@@ -158,6 +171,85 @@ async function loadInvoiceData() {
         console.warn('[ZUGFeRD] Positionstabelle (7 Spalten) nicht gefunden. Tabellen:', tables.items.length);
       }
 
+      // ── Summen aus Positionen berechnen ─────────────────────────────
+      // Betraege und MwSt aus den gelesenen Positionen ermitteln.
+      // Dabei werden Menge x Einzelpreis pro Position berechnet,
+      // sowie Netto, MwSt-Aufschluesselung und Brutto summiert.
+
+      // Hilfsfunktion: deutschen Betrag zu Float
+      function parseDE(s) {
+        if (!s) return 0;
+        return parseFloat(
+          String(s).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.')
+        ) || 0;
+      }
+
+      // Hilfsfunktion: Float zu deutschem Betrag-String "1.234,56 €"
+      function fmtDE(n) {
+        return n.toLocaleString('de-DE', {
+          minimumFractionDigits: 2, maximumFractionDigits: 2
+        }) + ' €';
+      }
+
+      // Zeilenbetrag = Menge x Einzelpreis (Einzelpreis ohne €-Zeichen)
+      let nettoGesamt = 0;
+      const mwstGruppen = {}; // { '19': { basis: 0, steuer: 0 }, ... }
+
+      for (const pos of positions) {
+        const menge      = parseDE(pos.menge);
+        const einzelpreis= parseDE(pos.einzelpreis);
+        const zeilenbetrag = Math.round(menge * einzelpreis * 100) / 100;
+
+        // Berechneten Betrag in Position eintragen (ueberschreibt eingetippten Wert)
+        pos.betrag = fmtDE(zeilenbetrag);
+
+        nettoGesamt += zeilenbetrag;
+
+        // MwSt-Satz ermitteln: "19 %" -> 19
+        const mwstMatch = String(pos.mwst_satz).match(/(\d+)/);
+        const mwstSatz  = mwstMatch ? parseInt(mwstMatch[1], 10) : 0;
+        const key = String(mwstSatz);
+        if (!mwstGruppen[key]) mwstGruppen[key] = { satz: mwstSatz, basis: 0, steuer: 0 };
+        mwstGruppen[key].basis  += zeilenbetrag;
+        mwstGruppen[key].steuer += Math.round(zeilenbetrag * mwstSatz / 100 * 100) / 100;
+      }
+
+      nettoGesamt = Math.round(nettoGesamt * 100) / 100;
+
+      const mwst19  = mwstGruppen['19'] || { basis: 0, steuer: 0 };
+      const mwst7   = mwstGruppen['7']  || { basis: 0, steuer: 0 };
+      const mwst0   = mwstGruppen['0']  || { basis: 0, steuer: 0 };
+
+      const steuerGesamt = Math.round((mwst19.steuer + mwst7.steuer) * 100) / 100;
+      const bruttoGesamt = Math.round((nettoGesamt + steuerGesamt) * 100) / 100;
+
+      // Berechnete Summen in Content Controls zurueckschreiben
+      const summenMap = {
+        'summe_netto':   fmtDE(nettoGesamt),
+        'summe_mwst_19': fmtDE(mwst19.steuer),
+        'summe_mwst_7':  fmtDE(mwst7.steuer),
+        'summe_mwst_0':  fmtDE(mwst0.basis),   // Steuerfreie = Nettobasis
+        'summe_brutto':  fmtDE(bruttoGesamt),
+      };
+
+      // Controls aktualisieren
+      for (const ctrl of controls.items) {
+        if (ctrl.tag in summenMap) {
+          try {
+            ctrl.insertText(summenMap[ctrl.tag], 'Replace');
+          } catch(e) {
+            console.warn('[ZUGFeRD] Summe konnte nicht geschrieben werden:', ctrl.tag, e.message);
+          }
+        }
+      }
+      await context.sync();
+      console.log('[ZUGFeRD] Summen berechnet:',
+        'Netto', fmtDE(nettoGesamt),
+        '| MwSt19', fmtDE(mwst19.steuer),
+        '| MwSt7', fmtDE(mwst7.steuer),
+        '| Brutto', fmtDE(bruttoGesamt)
+      );
+
       // Rechnungsdaten zusammenstellen
       invoiceData = {
         // Rechnungsdetails
@@ -182,12 +274,12 @@ async function loadInvoiceData() {
         empfaenger_kundennr:        extractEmpfaengerValue(cc['empfaenger_kundennr'] || '', ['Kunden-Nr.:']),
         empfaenger_bestellnr:       extractEmpfaengerValue(cc['empfaenger_bestellnr'] || '', ['Ihre Bestellnummer:']),
 
-        // Summen
-        summe_netto:    cc['summe_netto']    || '0,00',
-        summe_mwst_19:  cc['summe_mwst_19']  || '0,00',
-        summe_mwst_7:   cc['summe_mwst_7']   || '0,00',
-        summe_mwst_0:   cc['summe_mwst_0']   || '0,00',
-        summe_brutto:   cc['summe_brutto']   || '0,00',
+        // Summen - aus Positions-Berechnung (oben berechnet)
+        summe_netto:    fmtDE(nettoGesamt),
+        summe_mwst_19:  fmtDE(mwst19.steuer),
+        summe_mwst_7:   fmtDE(mwst7.steuer),
+        summe_mwst_0:   fmtDE(mwst0.basis),
+        summe_brutto:   fmtDE(bruttoGesamt),
 
         // Zahlung
         zahlung_betrag:            cc['zahlung_betrag']            || '',
@@ -228,6 +320,10 @@ function updateExportButton() {
   exportBtn.textContent = ready
     ? '⬇ ZUGFeRD PDF erstellen'
     : (serverReachable ? 'Dokument nicht bereit' : 'Server nicht erreichbar');
+
+  // Neu berechnen: aktiv sobald Dokument geladen (unabhaengig vom Server)
+  const recalcBtn = document.getElementById('recalcBtn');
+  if (recalcBtn) recalcBtn.disabled = !(invoiceData && invoiceData.rechnung_nummer);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

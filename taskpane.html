@@ -56,6 +56,10 @@
     #exportBtn:hover:not(:disabled) { background: var(--blue-mid); }
     #exportBtn:disabled { background: #a19f9d; cursor: not-allowed; }
 
+    #recalcBtn { width: 100%; padding: 7px; background: none; color: var(--blue-mid); border: 1px solid var(--blue-mid); border-radius: 4px; font-size: 12px; cursor: pointer; margin-bottom: 12px; transition: background .15s; }
+    #recalcBtn:hover { background: var(--blue-light); }
+    #recalcBtn:disabled { opacity: .5; cursor: not-allowed; }
+
     #progress { display: none; align-items: center; gap: 10px; padding: 10px; background: var(--blue-light); border-radius: 4px; margin-bottom: 12px; font-size: 12px; color: var(--blue); }
     .spinner { width: 18px; height: 18px; border: 2px solid var(--blue-light); border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -118,6 +122,7 @@
   </div>
 
   <button id="exportBtn" disabled>ZUGFeRD PDF erstellen</button>
+  <button id="recalcBtn" disabled>&#8635; Neu berechnen</button>
 
   <div id="progress">
     <div class="spinner"></div>

@@ -1,0 +1,21 @@
+# ── Sensible/lokale Konfiguration – niemals committen ──────────────────────
+zugferd-server/config.json
+
+# ── Abhaengigkeiten (per "npm install" neu erzeugbar) ──────────────────────
+zugferd-server/node_modules/
+
+# ── Heruntergeladene KoSIT-Validator-Binaries (per setup-kosit-validator.bat) ─
+zugferd-server/tools/
+
+# ── Generierte / lokale Artefakte ───────────────────────────────────────────
+word-addin-catalog/
+unc-pfad.txt
+*.log
+*.old
+
+# ── Claude Code lokale Einstellungen ────────────────────────────────────────
+.claude/settings.local.json
+
+# ── OS ───────────────────────────────────────────────────────────────────────
+Thumbs.db
+.DS_Store

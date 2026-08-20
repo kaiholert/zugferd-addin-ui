@@ -18,6 +18,7 @@ const SERVER_CHECK_INTERVAL = 10_000; // ms
 let selectedProfile  = 'EN16931';
 let invoiceData      = null;
 let serverReachable  = false;
+let kositAvailable   = false;
 
 // ── DOM-Referenzen ────────────────────────────────────────────────────────────
 const serverBanner  = document.getElementById('serverBanner');
@@ -28,6 +29,9 @@ const progressMsg   = document.getElementById('progressMsg');
 const resultDiv     = document.getElementById('result');
 const previewLoad   = document.getElementById('previewLoading');
 const previewCont   = document.getElementById('previewContent');
+const kositBtn      = document.getElementById('kositBtn');
+const kositResultDiv       = document.getElementById('kositResult');
+const kositUnavailableDiv  = document.getElementById('kositUnavailable');
 
 // ── Office.js initialisieren ──────────────────────────────────────────────────
 Office.onReady(info => {
@@ -47,6 +51,10 @@ Office.onReady(info => {
 
   // Export-Button
   exportBtn.addEventListener('click', runExport);
+
+  // KoSIT-Validierung Button
+  kositBtn.addEventListener('click', runKositValidation);
+  checkKositStatus();
 
   // Neu berechnen Button
   document.getElementById('recalcBtn').addEventListener('click', async () => {
@@ -357,6 +365,118 @@ function updateExportButton() {
   // Neu berechnen: aktiv sobald Dokument geladen (unabhaengig vom Server)
   const recalcBtn = document.getElementById('recalcBtn');
   if (recalcBtn) recalcBtn.disabled = !(invoiceData && invoiceData.rechnung_nummer);
+
+  // KoSIT-Pruefung: aktiv sobald Dokument geladen, Server erreichbar und Validator eingerichtet
+  kositBtn.disabled = !(kositAvailable && serverReachable && invoiceData && invoiceData.rechnung_nummer);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KoSIT-Validierung
+// ─────────────────────────────────────────────────────────────────────────────
+async function checkKositStatus() {
+  try {
+    const res    = await fetch(`${SERVER_URL}/validate-status`, { signal: AbortSignal.timeout(5000) });
+    const status = await res.json();
+    kositAvailable = !!status.available;
+
+    if (!kositAvailable) {
+      kositUnavailableDiv.style.display = 'block';
+      kositUnavailableDiv.innerHTML =
+        'KoSIT-Validierung nicht eingerichtet:<ul>' +
+        (status.reasons || []).map(r => `<li>${escapeHtml(r)}</li>`).join('') +
+        '</ul>Siehe setup-kosit-validator.bat im Projektordner.';
+    } else {
+      kositUnavailableDiv.style.display = 'none';
+      kositUnavailableDiv.innerHTML = '';
+    }
+  } catch {
+    kositAvailable = false;
+    kositUnavailableDiv.style.display = 'block';
+    kositUnavailableDiv.textContent = 'KoSIT-Status konnte nicht abgefragt werden (Server nicht erreichbar).';
+  }
+  updateExportButton();
+}
+
+async function runKositValidation() {
+  if (!invoiceData) return;
+
+  kositBtn.disabled = true;
+  const prevLabel = kositBtn.textContent;
+  kositBtn.textContent = '⏳ Prüfe...';
+
+  try {
+    const response = await fetch(`${SERVER_URL}/validate`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile: selectedProfile, invoice: invoiceData }),
+    });
+    const json = await response.json();
+
+    if (json.success) {
+      renderKositResult(json.validation);
+    } else {
+      renderKositResult({ ran: false, valid: null, reason: json.error || 'Unbekannter Fehler' });
+    }
+  } catch (err) {
+    renderKositResult({ ran: false, valid: null, reason: 'Anfrage fehlgeschlagen: ' + err.message });
+  } finally {
+    kositBtn.textContent = prevLabel;
+    updateExportButton();
+  }
+}
+
+/**
+ * Zeigt das Ergebnis einer KoSIT-Validierung im #kositResult Panel an.
+ * validation: { ran, valid, errorCount, warningCount, messages, reason, ... }
+ */
+function renderKositResult(validation) {
+  kositResultDiv.style.display = 'block';
+
+  if (!validation || validation.ran === false) {
+    kositResultDiv.className = 'off';
+    kositResultDiv.innerHTML =
+      `<div class="kosit-title">ⓘ KoSIT-Prüfung nicht durchgeführt</div>` +
+      escapeHtml((validation && validation.reason) || 'Unbekannter Grund');
+    return;
+  }
+
+  if (validation.valid === null) {
+    kositResultDiv.className = 'warn';
+    kositResultDiv.innerHTML =
+      `<div class="kosit-title">⚠ KoSIT-Prüfung ohne eindeutiges Ergebnis</div>` +
+      escapeHtml(validation.reason || 'Report konnte nicht ausgewertet werden.');
+    return;
+  }
+
+  const msgs = validation.messages || [];
+  const MAX_SHOWN = 20;
+
+  if (validation.valid) {
+    kositResultDiv.className = 'ok';
+    kositResultDiv.innerHTML =
+      `<div class="kosit-title">✓ KoSIT: XML ist gültig</div>` +
+      (validation.warningCount ? `${validation.warningCount} Warnung(en)` : 'Keine Fehler oder Warnungen.');
+  } else {
+    kositResultDiv.className = 'fail';
+    kositResultDiv.innerHTML =
+      `<div class="kosit-title">✗ KoSIT: XML ist NICHT gültig</div>` +
+      `${validation.errorCount} Fehler, ${validation.warningCount} Warnung(en)`;
+  }
+
+  if (msgs.length) {
+    const shown = msgs.slice(0, MAX_SHOWN);
+    kositResultDiv.innerHTML += '<ul>' + shown.map(m => `<li>${
+      m.severity === 'error' ? '✗' : (m.severity === 'warning' ? '⚠' : 'ⓘ')
+    } ${escapeHtml(m.message)}${m.location ? `<span class="kosit-loc">${escapeHtml(m.location)}</span>` : ''}</li>`).join('') + '</ul>';
+    if (msgs.length > MAX_SHOWN) {
+      kositResultDiv.innerHTML += `<div class="kosit-more">+ ${msgs.length - MAX_SHOWN} weitere Meldung(en)</div>`;
+    }
+  }
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -412,8 +532,10 @@ async function runExport() {
         `Positionen: ${invoiceData.positions.length}`,
         json.filePath,
       );
+      if (json.validation) renderKositResult(json.validation);
     } else {
       showError('Server-Fehler: ' + json.error);
+      if (json.validation) renderKositResult(json.validation);
     }
 
   } catch (err) {

@@ -69,6 +69,22 @@
     #result.error   { background: #FDE7E9; color: var(--red);   border-left: 3px solid var(--red); }
     #result .path   { font-family: monospace; font-size: 11px; word-break: break-all; margin-top: 4px; opacity: .8; }
 
+    #kositBtn { width: 100%; padding: 7px; background: none; color: var(--blue-mid); border: 1px solid var(--blue-mid); border-radius: 4px; font-size: 12px; cursor: pointer; margin-bottom: 8px; transition: background .15s; }
+    #kositBtn:hover:not(:disabled) { background: var(--blue-light); }
+    #kositBtn:disabled { opacity: .5; cursor: not-allowed; }
+    #kositUnavailable { font-size: 11px; color: var(--grey); margin-bottom: 12px; line-height: 1.5; }
+    #kositUnavailable ul { margin: 4px 0 0 16px; padding: 0; }
+    #kositResult { display: none; border-radius: 4px; padding: 10px 12px; font-size: 12px; margin-bottom: 12px; line-height: 1.5; }
+    #kositResult.ok    { background: #DFF6DD; color: var(--green); border-left: 3px solid var(--green); }
+    #kositResult.fail  { background: #FDE7E9; color: var(--red);   border-left: 3px solid var(--red); }
+    #kositResult.warn  { background: #FFF4CE; color: #8A6D00;      border-left: 3px solid #B95000; }
+    #kositResult.off   { background: #f3f2f1; color: var(--grey);  border-left: 3px solid #a19f9d; }
+    #kositResult .kosit-title { font-weight: 600; margin-bottom: 4px; }
+    #kositResult ul { margin: 6px 0 0 16px; padding: 0; }
+    #kositResult li { margin-bottom: 4px; word-break: break-word; }
+    #kositResult .kosit-loc { font-family: monospace; font-size: 10px; opacity: .75; display: block; }
+    #kositResult .kosit-more { font-style: italic; opacity: .8; margin-top: 4px; }
+
     .info-footer { border-top: 1px solid var(--border); padding-top: 12px; font-size: 11px; color: var(--grey); line-height: 1.6; }
   </style>
 </head>
@@ -130,6 +146,11 @@
   </div>
 
   <div id="result"></div>
+
+  <div class="section-label" style="margin-top:4px;">KoSIT-Validierung</div>
+  <button id="kositBtn" disabled>XML prüfen (KoSIT)</button>
+  <div id="kositUnavailable" style="display:none"></div>
+  <div id="kositResult"></div>
 
   <div class="info-footer">
     <strong>Server nicht erreichbar?</strong><br>

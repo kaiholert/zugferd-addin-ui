@@ -238,16 +238,28 @@ async function loadInvoiceData() {
       const bruttoGesamt = Math.round((nettoGesamt + steuerGesamt) * 100) / 100;
 
       // Berechnete Summen + Labels in Content Controls zurueckschreiben
+      // Rechnungsnummer und Empfaenger aus Detail-Controls extrahieren
+      const rechnungsNr  = extractValue(cc['rechnung_nummer']   || '');
+      const faelligkeit  = extractValue(cc['faelligkeitsdatum'] || '');
+      const empfFirma    = cc['empfaenger_firma'] || '';
+
       const summenMap = {
+        // Summen
         'summe_netto':    fmtDE(nettoGesamt),
         'summe_mwst_19':  fmtDE(mwst19.steuer),
         'summe_mwst_7':   fmtDE(mwst7.steuer),
-        'summe_mwst_0':   fmtDE(mwst0.steuer),   // Steuerbetrag 0% = immer 0,00 €
+        'summe_mwst_0':   fmtDE(mwst0.steuer),
         'summe_brutto':   fmtDE(bruttoGesamt),
-        // Label-Zellen mit aktuellen Basisbetragen
+        // MwSt-Labels mit aktuellen Basisbetragen
         'label_mwst_19':  `MwSt. 19 % (auf ${fmtDE(mwst19.basis)}):`,
         'label_mwst_7':   `MwSt. 7 % (auf ${fmtDE(mwst7.basis)}):`,
         'label_mwst_0':   `MwSt. 0 % / steuerfrei (auf ${fmtDE(mwst0.basis)}):`,
+        // Titel: Rechnungsnummer aus Detail uebernehmen
+        'rechnung_nummer_titel': `Rechnung ${rechnungsNr}`,
+        // Zahlungsblock: Verwendungszweck
+        'zahlung_verwendungszweck': `Verwendungszweck:  ${rechnungsNr} / ${empfFirma}`,
+        // Zahlungsblock: Zahlungsaufforderungs-Satz
+        'zahlung_satz': `Bitte überweisen Sie den Rechnungsbetrag von ${fmtDE(bruttoGesamt)} bis zum ${faelligkeit} auf folgendes Konto:`,
       };
 
       // Betrag-Zellen in Tabelle synchronisieren

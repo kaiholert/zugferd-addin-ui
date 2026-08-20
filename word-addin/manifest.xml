@@ -18,9 +18,8 @@
     <Host Name="Document"/>
   </Hosts>
 
-  <!-- GITHUB_PAGES_URL wird durch setup-github.bat ersetzt -->
   <DefaultSettings>
-    <SourceLocation DefaultValue="GITHUB_PAGES_URL/taskpane.html?v=202608190823"/>
+    <SourceLocation DefaultValue="https://kaiholert.github.io/zugferd-addin-ui/taskpane.html?v=202608190823"/>
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -68,14 +67,14 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="GITHUB_PAGES_URL/assets/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="GITHUB_PAGES_URL/assets/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="GITHUB_PAGES_URL/assets/icon-80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://kaiholert.github.io/zugferd-addin-ui/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://kaiholert.github.io/zugferd-addin-ui/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://kaiholert.github.io/zugferd-addin-ui/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Commands.Url"           DefaultValue="GITHUB_PAGES_URL/commands.html"/>
-        <bt:Url id="Taskpane.Url"           DefaultValue="GITHUB_PAGES_URL/taskpane.html?v=202608190823"/>
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="GITHUB_PAGES_URL"/>
+        <bt:Url id="Commands.Url"           DefaultValue="https://kaiholert.github.io/zugferd-addin-ui/commands.html"/>
+        <bt:Url id="Taskpane.Url"           DefaultValue="https://kaiholert.github.io/zugferd-addin-ui/taskpane.html?v=202608190823"/>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://kaiholert.github.io/zugferd-addin-ui"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title"      DefaultValue="ZUGFeRD Export"/>

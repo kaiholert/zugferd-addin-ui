@@ -80,17 +80,17 @@ zugferd-addin/
 | Tag | Inhalt im Dokument | Beispiel |
 |-----|-------------------|---------|
 | `rechnung_nummer` | `"Rechnungsnummer:RE-2024-0001"` | extractValue() → `"RE-2024-0001"` |
-| `rechnung_datum` | `"Rechnungsdatum:01.01.2025"` | extractValue() → `"01.01.2025"` |
-| `lieferdatum` | `"Lieferdatum:01.01.2025"` | extractValue() → `"01.01.2025"` |
-| `faelligkeitsdatum` | `"Fälligkeitsdatum:31.01.2025"` | extractValue() → `"31.01.2025"` |
-| `zahlungsziel` | `"Zahlungsziel:30 Tage netto"` | extractValue() → `"30 Tage netto"` |
+| `zahlungsziel` | `"Zahlungsziel:30 Tage netto"` (manuell) | extractValue() → `"30 Tage netto"` |
 | `leistungsort` | `"Leistungsort:München"` | extractValue() → `"München"` |
-| `leistungsmonat` | `"Leistungsmonat:April 2026"` | extractValue() → `"April 2026"` |
+| `leistungsmonat` | `"Leistungsmonat:April 2026"` (manuell) | extractValue() → `"April 2026"` |
 | `waehrung` | `"Währung:EUR"` | extractValue() → `"EUR"` |
 | `sprache` | `"Sprache:Deutsch"` | extractValue() → `"Deutsch"` |
 
 **Wichtig:** Alle Detail-Controls enthalten `"Label:Wert"` in einem einzigen Run.
 `extractValue()` in taskpane.js schneidet alles bis zum ersten `:` ab.
+
+`rechnung_datum`, `lieferdatum` und `faelligkeitsdatum` werden **nicht mehr manuell
+gepflegt** – siehe "Automatisch berechnete Controls" unten.
 
 ### Empfänger (linke Spalte, Block-SDTs, je ein Paragraph pro Control)
 
@@ -110,6 +110,9 @@ zugferd-addin/
 | Tag | Beschreibung |
 |-----|-------------|
 | `rechnung_nummer_titel` | `"Rechnung RE-2024-0001"` – aus rechnung_nummer |
+| `rechnung_datum` | = Monatsletzter des `leistungsmonat` (z. B. Leistungsmonat "April 2026" → `"Rechnungsdatum:30.04.2026"`) |
+| `lieferdatum` | = `rechnung_datum` (identischer Monatsletzter) |
+| `faelligkeitsdatum` | = `rechnung_datum` + Tage aus `zahlungsziel` (z. B. "30 Tage netto" → +30 Tage) |
 | `summe_netto` | Summe aller Zeilenbeträge |
 | `summe_mwst_19` | Steuerbetrag 19% |
 | `summe_mwst_7` | Steuerbetrag 7% |
@@ -117,9 +120,17 @@ zugferd-addin/
 | `summe_brutto` | Netto + alle Steuerbeträge |
 | `label_mwst_19` | `"MwSt. 19 % (auf X.XXX,XX €):"` |
 | `label_mwst_7` | `"MwSt. 7 % (auf X.XXX,XX €):"` |
-| `label_mwst_0` | `"MwSt. 0 % / steuerfrei (auf X.XXX,XX €):"` |
+| `label_mwst_0` | `"MwSt. 0 % (auf X.XXX,XX €):"` |
 | `zahlung_satz` | Zahlungsaufforderungs-Satz mit Brutto + Fälligkeit |
 | `zahlung_verwendungszweck` | `"Verwendungszweck: RE-... / Firma GmbH"` |
+
+**Datumsberechnung (seit 2026-08-20):** `rechnung_datum`/`lieferdatum`/`faelligkeitsdatum`
+werden bei "Neu berechnen" aus `leistungsmonat` (z. B. `"April 2026"`, volle deutsche
+Monatsnamen) und `zahlungsziel` (führende Zahl wird als Tage interpretiert, z. B.
+`"30 Tage netto"` → 30) berechnet und ins jeweilige Control zurückgeschrieben
+(`berechneDatumsfelder()` in taskpane.js). Lässt sich der Leistungsmonat nicht parsen
+(leer/unbekanntes Format), bleiben die drei Controls unverändert – kein Überschreiben
+mit leeren Werten.
 
 ### Positionstabelle (KEINE Content Controls – freie Tabellenzellen)
 

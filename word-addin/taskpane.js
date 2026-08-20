@@ -248,8 +248,18 @@ async function loadInvoiceData() {
       // Berechnete Summen + Labels in Content Controls zurueckschreiben
       // Rechnungsnummer und Empfaenger aus Detail-Controls extrahieren
       const rechnungsNr  = extractValue(cc['rechnung_nummer']   || '');
-      const faelligkeit  = extractValue(cc['faelligkeitsdatum'] || '');
       const empfFirma    = cc['empfaenger_firma'] || '';
+
+      // Rechnungsdatum/Lieferdatum/Faelligkeitsdatum automatisch aus
+      // Leistungsmonat (manuell) + Zahlungsziel (manuell) berechnen:
+      //   Rechnungsdatum = Lieferdatum = Monatsletzter des Leistungsmonats
+      //   Faelligkeitsdatum = Rechnungsdatum + Zahlungsziel (Tage)
+      const { rechnungsDatumBerechnet, lieferdatumBerechnet, faelligkeitsdatumBerechnet } =
+        berechneDatumsfelder(cc['leistungsmonat'], cc['zahlungsziel']);
+
+      // Fuer den Zahlungssatz: berechnetes Faelligkeitsdatum bevorzugen,
+      // sonst (falls Leistungsmonat noch nicht auswertbar) alten Wert nutzen
+      const faelligkeit = faelligkeitsdatumBerechnet || extractValue(cc['faelligkeitsdatum'] || '');
 
       const summenMap = {
         // Summen
@@ -261,7 +271,7 @@ async function loadInvoiceData() {
         // MwSt-Labels mit aktuellen Basisbetragen
         'label_mwst_19':  `MwSt. 19 % (auf ${fmtDE(mwst19.basis)}):`,
         'label_mwst_7':   `MwSt. 7 % (auf ${fmtDE(mwst7.basis)}):`,
-        'label_mwst_0':   `MwSt. 0 % / steuerfrei (auf ${fmtDE(mwst0.basis)}):`,
+        'label_mwst_0':   `MwSt. 0 % (auf ${fmtDE(mwst0.basis)}):`,
         // Titel: Rechnungsnummer aus Detail uebernehmen
         'rechnung_nummer_titel': `Rechnung ${rechnungsNr}`,
         // Zahlungsblock: Verwendungszweck
@@ -269,6 +279,13 @@ async function loadInvoiceData() {
         // Zahlungsblock: Zahlungsaufforderungs-Satz
         'zahlung_satz': `Bitte überweisen Sie den Rechnungsbetrag von ${fmtDE(bruttoGesamt)} bis zum ${faelligkeit} auf folgendes Konto:`,
       };
+
+      // Rechnungsdatum/Lieferdatum/Faelligkeitsdatum nur ueberschreiben,
+      // wenn sie sich aus dem Leistungsmonat/Zahlungsziel berechnen liessen
+      // (sonst bleibt der bisherige Inhalt der Controls unangetastet)
+      if (rechnungsDatumBerechnet)    summenMap['rechnung_datum']      = `Rechnungsdatum:${rechnungsDatumBerechnet}`;
+      if (lieferdatumBerechnet)       summenMap['lieferdatum']         = `Lieferdatum:${lieferdatumBerechnet}`;
+      if (faelligkeitsdatumBerechnet) summenMap['faelligkeitsdatum']   = `Fälligkeitsdatum:${faelligkeitsdatumBerechnet}`;
 
       // Betrag-Zellen in Tabelle synchronisieren
       await context.sync();
@@ -295,9 +312,9 @@ async function loadInvoiceData() {
       invoiceData = {
         // Rechnungsdetails
         rechnung_nummer:   extractValue(cc['rechnung_nummer']   || ''),
-        rechnung_datum:    extractValue(cc['rechnung_datum']    || ''),
-        lieferdatum:       extractValue(cc['lieferdatum']       || ''),
-        faelligkeitsdatum: extractValue(cc['faelligkeitsdatum'] || ''),
+        rechnung_datum:    rechnungsDatumBerechnet    || extractValue(cc['rechnung_datum']    || ''),
+        lieferdatum:       lieferdatumBerechnet       || extractValue(cc['lieferdatum']       || ''),
+        faelligkeitsdatum: faelligkeitsdatumBerechnet || extractValue(cc['faelligkeitsdatum'] || ''),
         zahlungsziel:      extractValue(cc['zahlungsziel']      || ''),
         leistungsort:      extractValue(cc['leistungsort']      || ''),
         leistungsmonat:    extractValue(cc['leistungsmonat']    || ''),
@@ -642,6 +659,73 @@ function uint8ArrayToBase64(bytes) {
 function parseGermanFloat(str) {
   if (!str) return 0;
   return parseFloat(str.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rechnungsdatum / Lieferdatum / Faelligkeitsdatum aus Leistungsmonat +
+// Zahlungsziel berechnen
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MONATE_DE = {
+  januar: 0, februar: 1, 'märz': 2, maerz: 2, april: 3, mai: 4, juni: 5,
+  juli: 6, august: 7, september: 8, oktober: 9, november: 10, dezember: 11,
+};
+
+// "Leistungsmonat:April 2026" -> extractValue() -> "April 2026" -> {jahr, monatIndex}
+function parseLeistungsmonat(text) {
+  const wert = extractValue(text || '');
+  const m = wert.trim().match(/^(\p{L}+)\s+(\d{4})$/u);
+  if (!m) return null;
+  const monatIndex = MONATE_DE[m[1].toLowerCase()];
+  if (monatIndex === undefined) return null;
+  return { jahr: parseInt(m[2], 10), monatIndex };
+}
+
+// Letzter Tag eines Monats: Tag 0 des Folgemonats
+function letzterTagDesMonats(jahr, monatIndex) {
+  return new Date(jahr, monatIndex + 1, 0);
+}
+
+function addTage(datum, tage) {
+  const d = new Date(datum);
+  d.setDate(d.getDate() + tage);
+  return d;
+}
+
+function fmtDatumDE(d) {
+  const tt = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${tt}.${mm}.${d.getFullYear()}`;
+}
+
+/**
+ * Berechnet Rechnungsdatum, Lieferdatum und Faelligkeitsdatum:
+ *   Rechnungsdatum = Lieferdatum = Monatsletzter des Leistungsmonats
+ *   Faelligkeitsdatum = Rechnungsdatum + Zahlungsziel (Tage, aus z.B. "30 Tage netto")
+ * Liefert '' fuer Felder, die sich nicht berechnen lassen (z.B. Leistungsmonat
+ * leer/nicht auswertbar) - in dem Fall bleibt das jeweilige Control unangetastet.
+ */
+function berechneDatumsfelder(leistungsmonatText, zahlungszielText) {
+  const leistungsmonat = parseLeistungsmonat(leistungsmonatText);
+  if (!leistungsmonat) {
+    console.warn('[ZUGFeRD] Leistungsmonat konnte nicht geparst werden:', leistungsmonatText);
+    return { rechnungsDatumBerechnet: '', lieferdatumBerechnet: '', faelligkeitsdatumBerechnet: '' };
+  }
+
+  const monatsletzter = letzterTagDesMonats(leistungsmonat.jahr, leistungsmonat.monatIndex);
+  const rechnungsDatumBerechnet = fmtDatumDE(monatsletzter);
+  const lieferdatumBerechnet    = rechnungsDatumBerechnet;
+
+  const zahlungszielWert = extractValue(zahlungszielText || '');
+  const tageMatch        = zahlungszielWert.match(/(\d+)/);
+  let faelligkeitsdatumBerechnet = '';
+  if (tageMatch) {
+    faelligkeitsdatumBerechnet = fmtDatumDE(addTage(monatsletzter, parseInt(tageMatch[1], 10)));
+  } else {
+    console.warn('[ZUGFeRD] Zahlungsziel konnte nicht geparst werden:', zahlungszielText);
+  }
+
+  return { rechnungsDatumBerechnet, lieferdatumBerechnet, faelligkeitsdatumBerechnet };
 }
 
 // Land → ISO 3166-1 Alpha-2

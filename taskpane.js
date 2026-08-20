@@ -237,13 +237,17 @@ async function loadInvoiceData() {
       const steuerGesamt = Math.round((mwst19.steuer + mwst7.steuer) * 100) / 100;
       const bruttoGesamt = Math.round((nettoGesamt + steuerGesamt) * 100) / 100;
 
-      // Berechnete Summen in Content Controls zurueckschreiben
+      // Berechnete Summen + Labels in Content Controls zurueckschreiben
       const summenMap = {
-        'summe_netto':   fmtDE(nettoGesamt),
-        'summe_mwst_19': fmtDE(mwst19.steuer),
-        'summe_mwst_7':  fmtDE(mwst7.steuer),
-        'summe_mwst_0':  fmtDE(mwst0.basis),   // Steuerfreie = Nettobasis
-        'summe_brutto':  fmtDE(bruttoGesamt),
+        'summe_netto':    fmtDE(nettoGesamt),
+        'summe_mwst_19':  fmtDE(mwst19.steuer),
+        'summe_mwst_7':   fmtDE(mwst7.steuer),
+        'summe_mwst_0':   fmtDE(mwst0.steuer),   // Steuerbetrag 0% = immer 0,00 €
+        'summe_brutto':   fmtDE(bruttoGesamt),
+        // Label-Zellen mit aktuellen Basisbetragen
+        'label_mwst_19':  `MwSt. 19 % (auf ${fmtDE(mwst19.basis)}):`,
+        'label_mwst_7':   `MwSt. 7 % (auf ${fmtDE(mwst7.basis)}):`,
+        'label_mwst_0':   `MwSt. 0 % / steuerfrei (auf ${fmtDE(mwst0.basis)}):`,
       };
 
       // Betrag-Zellen in Tabelle synchronisieren
@@ -295,7 +299,7 @@ async function loadInvoiceData() {
         summe_netto:    fmtDE(nettoGesamt),
         summe_mwst_19:  fmtDE(mwst19.steuer),
         summe_mwst_7:   fmtDE(mwst7.steuer),
-        summe_mwst_0:   fmtDE(mwst0.basis),
+        summe_mwst_0:   fmtDE(mwst0.steuer),   // Steuerbetrag 0%
         summe_brutto:   fmtDE(bruttoGesamt),
 
         // Zahlung

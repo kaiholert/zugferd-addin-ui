@@ -283,9 +283,12 @@ async function loadInvoiceData() {
       // Rechnungsdatum/Lieferdatum/Faelligkeitsdatum nur ueberschreiben,
       // wenn sie sich aus dem Leistungsmonat/Zahlungsziel berechnen liessen
       // (sonst bleibt der bisherige Inhalt der Controls unangetastet)
-      if (rechnungsDatumBerechnet)    summenMap['rechnung_datum']      = `Rechnungsdatum:${rechnungsDatumBerechnet}`;
-      if (lieferdatumBerechnet)       summenMap['lieferdatum']         = `Lieferdatum:${lieferdatumBerechnet}`;
-      if (faelligkeitsdatumBerechnet) summenMap['faelligkeitsdatum']   = `Fälligkeitsdatum:${faelligkeitsdatumBerechnet}`;
+      // Tabulator nach dem Doppelpunkt wie bei den manuell erfassten
+      // Detail-Feldern (Rechnungsnummer, Zahlungsziel, ...), damit die
+      // Werte in derselben Spalte ausgerichtet sind
+      if (rechnungsDatumBerechnet)    summenMap['rechnung_datum']      = `Rechnungsdatum:\t${rechnungsDatumBerechnet}`;
+      if (lieferdatumBerechnet)       summenMap['lieferdatum']         = `Lieferdatum:\t${lieferdatumBerechnet}`;
+      if (faelligkeitsdatumBerechnet) summenMap['faelligkeitsdatum']   = `Fälligkeitsdatum:\t${faelligkeitsdatumBerechnet}`;
 
       // Betrag-Zellen in Tabelle synchronisieren
       await context.sync();

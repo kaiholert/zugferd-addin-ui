@@ -279,11 +279,13 @@ function generateZugferdXml(data, profileKey = 'EN16931') {
       </ram:ApplicableTradeTax>`).join('')}
 
       <!-- Zahlungsziel -->
+      <!-- Reihenfolge laut CII-Schema: Description VOR DueDateDateTime, sonst
+           XSD-Fehler "expected DirectDebitMandateID" (mit KoSIT Validator verifiziert) -->
       ${faellig ? `<ram:SpecifiedTradePaymentTerms>
+        ${data.zahlungsziel ? `<ram:Description>${escXml(data.zahlungsziel)}</ram:Description>` : ''}
         <ram:DueDateDateTime>
           <udt:DateTimeString format="102">${faellig}</udt:DateTimeString>
         </ram:DueDateDateTime>
-        ${data.zahlungsziel ? `<ram:Description>${escXml(data.zahlungsziel)}</ram:Description>` : ''}
       </ram:SpecifiedTradePaymentTerms>` : ''}
 
       <!-- Gesamtbeträge -->

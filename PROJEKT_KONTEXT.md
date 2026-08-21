@@ -44,30 +44,35 @@ für Rechnungsdaten.
 ## Projektstruktur
 
 ```
-zugferd-addin/
-├── word-addin/                        ← GitHub Pages Repo (eigenes Git)
+zugferd-addin/                         ← Git-Repo-Root (ein Repo fürs gesamte Projekt)
+├── word-addin/                        ← wird via GitHub Actions nach GitHub Pages deployt
 │   ├── manifest.xml                   ← Add-in Manifest (URLs auf GitHub Pages)
 │   ├── taskpane.html                  ← UI: Profil-Auswahl, Vorschau, Buttons, KoSIT-Panel
 │   ├── taskpane.js                    ← Kernlogik (siehe unten)
 │   ├── commands.html                  ← Leer, Pflicht für Manifest
-│   └── diagnose.html                  ← Diagnose-Tool (läuft in Task Pane)
+│   ├── diagnose.html                  ← Diagnose-Tool (läuft in Task Pane)
+│   └── assets/                        ← Ribbon-Icons (icon-16/32/80.png)
 │
 ├── zugferd-server/                    ← Node.js Server
 │   ├── src/
 │   │   ├── server.js                  ← Express Server Port 3737
 │   │   ├── zugferd-xml.js             ← XML Generator (CII/EN16931)
 │   │   ├── pdf-embedder.js            ← PDF/A-3b via pdf-lib
-│   │   └── kosit-validator.js         ← KoSIT-Validator-Aufruf (Java-Subprozess) + Report-Parsing
+│   │   ├── kosit-validator.js         ← KoSIT-Validator-Aufruf (Java-Subprozess) + Report-Parsing
+│   │   └── open-quick-invoice.ps1     ← Word-COM-Automation für die Schnellerfassung
+│   ├── public/                        ← quick-invoice.html/.js (Schnellerfassungs-Formular)
 │   ├── tools/kosit/                   ← Validator-JAR + Regel-Konfiguration (via Setup-Skript, NICHT in Git!)
 │   ├── config.json                    ← Firmendaten (NICHT in Git!)
 │   └── package.json
 │
+├── .github/workflows/deploy-pages.yml ← Pages-Deploy von word-addin/ bei Push
 ├── start-server.bat                   ← ZUGFeRD Server starten
+├── schnellrechnung.bat                ← Schnellerfassung öffnen (startet Server bei Bedarf)
 ├── setup-kosit-validator.bat          ← Lädt KoSIT Validator + ZUGFeRD-Regeln herunter
 ├── start-taskpane-server.bat          ← HTTPS Dev-Server (nicht mehr nötig)
 ├── install-addin.bat                  ← Shared Folder + Registry
 ├── clear-office-cache.bat             ← WEF + WebView2 Cache leeren
-├── setup-github.bat                   ← GitHub Pages einrichten
+├── setup-github.bat                   ← überholt, siehe Datei-Inhalt
 └── install-certificate.bat            ← HTTPS Dev-Zertifikat (nicht mehr nötig)
 ```
 
@@ -338,10 +343,50 @@ Weitere Origins können in `config.json` unter `"allowedOrigins"` eingetragen we
 
 ---
 
+## Schnellerfassung für Standard-Rechnungen
+
+Für den Regelfall (nur Rechnungsnummer, Leistungsmonat, Bestellnummer und
+Stunden ändern sich, eine einzige Position, immer derselbe Kunde) gibt es eine
+Web-Eingabemaske, die Word per COM-Automation startet/befüllt – ohne Zusatz-Tools,
+nur Windows-/Office-Bordmittel (PowerShell + Word-COM).
+
+**Ablauf:** `schnellrechnung.bat` doppelklicken (startet bei Bedarf
+`start-server.bat` mit und öffnet den Browser) → 4 Felder ausfüllen → **Word
+öffnen & befüllen** → in Word prüfen → **Neu berechnen** → Profil wählen →
+**ZUGFeRD PDF erstellen**.
+
+| Datei | Beschreibung |
+|-------|-------------|
+| `schnellrechnung.bat` | Launcher (Projekt-Root): startet Server falls nötig, öffnet Browser |
+| `zugferd-server/public/quick-invoice.html` + `.js` | Eingabemaske (kein Office.js, läuft im Browser) |
+| `zugferd-server/src/server.js` → `POST /quick-invoice` | Nimmt die 4 Werte entgegen, ruft PowerShell-Skript auf |
+| `zugferd-server/src/open-quick-invoice.ps1` | Word-COM-Automation: neues Dokument aus Vorlage, Content Controls befüllen, Positionstabelle auf 1 Zeile reduzieren |
+| `config.json` → `quickInvoice.templatePath` | Pfad zur `.dotx`-Vorlage (lokal, nicht in Git) |
+
+**Was das Skript setzt:** `rechnung_nummer`, `leistungsmonat`, `empfaenger_bestellnr`
+(Content Controls, mit exakt der gleichen Label:Wert/Tab-Formatierung wie die
+manuell erfassten Felder) sowie die Menge (Spalte 3) in Zeile 1 der 7-spaltigen
+Positionstabelle; Zeilen 2+3 (Beispieldaten der Vorlage) werden gelöscht.
+
+**Was unverändert bleibt:** Beschreibung/Einzelpreis/Einheit/MwSt-Satz der
+verbleibenden Position (Zeile 1 der Vorlage – dort einmalig auf die echten
+Standardwerte pflegen, falls noch nicht geschehen) sowie `zahlungsziel`.
+`rechnung_datum`/`lieferdatum`/`faelligkeitsdatum` werden wie gewohnt erst beim
+Klick auf **Neu berechnen** im Add-in aus dem Leistungsmonat berechnet (siehe
+`berechneDatumsfelder()` weiter oben).
+
+Word-Instanz wird wiederverwendet falls bereits aktiv (`Marshal::GetActiveObject`),
+sonst neu gestartet. Läuft **nicht** über `pwsh`/PowerShell 7 (dort existiert
+`GetActiveObject` nicht) – `execFile('powershell', ...)` ruft bewusst die
+klassische Windows-PowerShell (5.1, .NET Framework) auf.
+
+---
+
 ## Täglicher Workflow
 
 1. `start-server.bat` starten (Port 3737, bleibt offen)
-2. Word: Neue Datei aus Vorlage `.dotx` erstellen
+2. Word: Neue Datei aus Vorlage `.dotx` erstellen (oder `schnellrechnung.bat`
+   für den Regelfall – siehe oben)
 3. Rechnungsdaten befüllen (Empfänger, Details, Positionen – Menge + Einzelpreis)
 4. Add-in öffnen → **Neu berechnen** (befüllt Betrag, Summen, Verwendungszweck etc.)
 5. Profil wählen (Standard: EN 16931)

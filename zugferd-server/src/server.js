@@ -13,6 +13,7 @@ const express   = require('express');
 const cors      = require('cors');
 const path      = require('path');
 const fs        = require('fs');
+const { execFile } = require('child_process');
 const { generateZugferdXml, PROFILES } = require('./zugferd-xml');
 const { embedZugferdXml }              = require('./pdf-embedder');
 const { checkAvailability: checkKositAvailability, validateXml: validateWithKosit } = require('./kosit-validator');
@@ -77,6 +78,9 @@ app.use(cors({
 
 // Body-Parser: JSON bis 50 MB (PDF als Base64 kann groß sein)
 app.use(express.json({ limit: '50mb' }));
+
+// Statische Dateien (z.B. quick-invoice.html – Schnellerfassung)
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ── Routen ────────────────────────────────────────────────────────────────────
 
@@ -228,6 +232,60 @@ app.post('/generate', async (req, res) => {
     console.error('[FEHLER]', err);
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+/**
+ * POST /quick-invoice
+ *
+ * Schnellerfassung fuer Standard-Rechnungen: erzeugt per Word-COM-Automation
+ * (PowerShell) ein neues Dokument aus der .dotx-Vorlage und befuellt
+ * Rechnungsnummer, Leistungsmonat, Bestellnummer sowie die Stunden-Menge der
+ * (auf 1 Zeile reduzierten) Positionstabelle. Word wird gestartet falls nicht
+ * bereits aktiv, sonst wird die laufende Instanz genutzt.
+ *
+ * Request-Body: { rechnung_nummer, leistungsmonat, bestellnummer, stunden }
+ * Response: { success: true } oder { success: false, error: "..." }
+ */
+app.post('/quick-invoice', (req, res) => {
+  const { rechnung_nummer, leistungsmonat, bestellnummer, stunden } = req.body || {};
+
+  const fehlt = ['rechnung_nummer', 'leistungsmonat', 'bestellnummer', 'stunden']
+    .filter(feld => !String(req.body && req.body[feld] || '').trim());
+  if (fehlt.length) {
+    return res.status(400).json({ success: false, error: `Pflichtfeld(er) fehlen: ${fehlt.join(', ')}` });
+  }
+
+  const stundenZahl = parseFloat(String(stunden).replace(',', '.'));
+  if (!isFinite(stundenZahl) || stundenZahl <= 0) {
+    return res.status(400).json({ success: false, error: 'Stunden muss eine Zahl größer 0 sein' });
+  }
+
+  const qc = config.quickInvoice || {};
+  if (!qc.templatePath) {
+    return res.status(400).json({ success: false, error: 'quickInvoice.templatePath fehlt in config.json' });
+  }
+  if (!fs.existsSync(qc.templatePath)) {
+    return res.status(400).json({ success: false, error: `Vorlage nicht gefunden: ${qc.templatePath}` });
+  }
+
+  const scriptPath = path.join(__dirname, 'open-quick-invoice.ps1');
+  const args = [
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath,
+    '-RechnungNummer', String(rechnung_nummer),
+    '-Leistungsmonat', String(leistungsmonat),
+    '-Bestellnummer', String(bestellnummer),
+    '-Stunden', String(stundenZahl),
+    '-TemplatePfad', qc.templatePath,
+  ];
+
+  execFile('powershell', args, { timeout: qc.timeoutMs || 30000 }, (err, stdout, stderr) => {
+    if (err) {
+      console.error('[FEHLER] /quick-invoice', stderr || err.message);
+      return res.status(500).json({ success: false, error: (stderr || err.message || '').trim() || 'PowerShell-Skript fehlgeschlagen' });
+    }
+    console.log('[OK] Schnellerfassung:', rechnung_nummer, leistungsmonat, bestellnummer, stundenZahl);
+    res.json({ success: true });
+  });
 });
 
 // ── Nicht gefundene Routen ────────────────────────────────────────────────────

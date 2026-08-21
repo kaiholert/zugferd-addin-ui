@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ZUGFeRD Schnellerfassung</title>
+<style>
+  :root {
+    --blue:       #1F4E79;
+    --blue-mid:   #2E75B6;
+    --blue-light: #D6E4F0;
+    --green:      #107C10;
+    --red:        #C00;
+    --grey:       #605E5C;
+    --border:     #EDEBE9;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; font-size: 14px; color: #323130; background: #f3f2f1; }
+
+  .wrap { max-width: 420px; margin: 0 auto; min-height: 100vh; background: #fff; box-shadow: 0 0 24px rgba(0,0,0,.06); }
+
+  .header { background: var(--blue); color: #fff; padding: 20px 24px 16px; }
+  .header h1 { font-size: 19px; font-weight: 600; }
+  .header p  { font-size: 12px; opacity: .8; margin-top: 4px; }
+
+  #serverBanner { display: flex; align-items: center; gap: 8px; padding: 10px 24px; font-size: 12px; border-bottom: 1px solid var(--border); }
+  #serverBanner.ok  { background: #DFF6DD; color: #107C10; }
+  #serverBanner.err { background: #FDE7E9; color: #A4262C; }
+  #serverBanner.chk { background: #f3f2f1; color: var(--grey); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+  .content { padding: 24px; }
+
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 12px; font-weight: 600; color: var(--grey); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .3px; }
+  .field input {
+    width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #c8c6c4; border-radius: 4px;
+    font-family: inherit; color: #323130;
+  }
+  .field input:focus { outline: none; border-color: var(--blue-mid); box-shadow: 0 0 0 1px var(--blue-mid); }
+  .field .hint { font-size: 11px; color: var(--grey); margin-top: 4px; }
+
+  #submitBtn { width: 100%; padding: 13px; background: var(--blue); color: #fff; border: none; border-radius: 4px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 8px; transition: background .15s; }
+  #submitBtn:hover:not(:disabled) { background: var(--blue-mid); }
+  #submitBtn:disabled { background: #a19f9d; cursor: not-allowed; }
+
+  #result { display: none; border-radius: 4px; padding: 12px 14px; font-size: 13px; margin-top: 16px; line-height: 1.5; }
+  #result.success { background: #DFF6DD; color: var(--green); border-left: 3px solid var(--green); }
+  #result.error   { background: #FDE7E9; color: var(--red);   border-left: 3px solid var(--red); }
+
+  .info-footer { padding: 0 24px 24px; font-size: 11px; color: var(--grey); line-height: 1.6; border-top: 1px solid var(--border); margin-top: 8px; padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>ZUGFeRD Schnellerfassung</h1>
+    <p>Öffnet Word mit einer vorausgefüllten Standardrechnung</p>
+  </div>
+
+  <div id="serverBanner" class="chk">
+    <div class="dot"></div>
+    <span id="serverMsg">Verbinde mit lokalem Server...</span>
+  </div>
+
+  <div class="content">
+    <form id="quickForm">
+      <div class="field">
+        <label for="rechnungNummer">Rechnungsnummer</label>
+        <input type="text" id="rechnungNummer" placeholder="RE-2024-00042" required autocomplete="off"/>
+      </div>
+
+      <div class="field">
+        <label for="leistungsmonat">Leistungsmonat</label>
+        <input type="month" id="leistungsmonat" required/>
+      </div>
+
+      <div class="field">
+        <label for="bestellnummer">Bestellnummer (Kunde)</label>
+        <input type="text" id="bestellnummer" placeholder="PO-2024-001" required autocomplete="off"/>
+      </div>
+
+      <div class="field">
+        <label for="stunden">Stunden</label>
+        <input type="number" id="stunden" step="0.25" min="0" placeholder="40" required/>
+        <div class="hint">Wird als Menge in die (auf 1 Zeile reduzierte) Positionstabelle eingetragen.</div>
+      </div>
+
+      <button type="submit" id="submitBtn" disabled>Word öffnen &amp; befüllen</button>
+    </form>
+
+    <div id="result"></div>
+  </div>
+
+  <div class="info-footer">
+    Beschreibung, Einzelpreis, Einheit und MwSt. der Position bleiben unverändert
+    (Zeile 1 der Vorlage). Rechnungs-/Liefer-/Fälligkeitsdatum und Summen werden
+    danach wie gewohnt im Add-in über <strong>„Neu berechnen“</strong> ermittelt.
+  </div>
+</div>
+
+<script src="quick-invoice.js"></script>
+</body>
+</html>

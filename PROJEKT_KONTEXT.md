@@ -260,11 +260,18 @@ Läuft komplett lokal, keine Cloud-Abhängigkeit.
 
 - `checkAvailability(cfg)` – prüft Konfiguration + Java + Dateien (für `GET /validate-status`).
 - `validateXml(xmlString, cfg, opts)` – ruft `java -jar <jar> -s <scenarios.xml> -r <repoDir>
-  -o <workDir> -p <xmlFile>` als Kindprozess auf, parst den erzeugten Report (Namespace-Präfixe
-  werden beim Parsen entfernt, `fast-xml-parser`), sammelt `<valid>`-Flags sowie
-  Schematron-Meldungen (`failed-assert`/`successful-report`, SVRL) und XML-Schema-Meldungen
-  (`<message level="...">`, XOEV-Report-Format) zu einer einheitlichen `messages[]`-Liste
-  ({ severity, message, location, source }) zusammen.
+  -o <workDir> -p <xmlFile>` als Kindprozess auf, parst den erzeugten VARL-Report
+  (Namespace-Präfixe werden beim Parsen entfernt, `fast-xml-parser`). **Wichtig, empirisch
+  anhand echter Reports ermittelt (nicht aus generischer SVRL-Doku geraten):** maßgeblich für
+  gültig/ungültig ist `<rep:assessment><rep:accept|reject>` (entspricht der "Acceptance"-Spalte
+  der KoSIT-CLI) – **nicht** das `<rep:report valid="...">`-Attribut, das auch bei reinen
+  Warnungen `"false"` sein kann, obwohl das Dokument als ACCEPTABLE durchgeht. Findings kommen
+  als `<rep:message level="error|warning|..." xpathLocation="..." code="...">Text</rep:message>`
+  (nicht als rohes SVRL `failed-assert`/`successful-report` – das wird nur als Fallback für
+  andere Validator-Konfigurationen mitunterstützt). `<rep:noScenarioMatched>` (Guideline-ID/Profil
+  nicht erkannt) erzeugt keine `rep:message`-Einträge und wird deshalb mit einer eigenen
+  synthetischen Fehlermeldung abgefangen. Alles wird zu einer einheitlichen `messages[]`-Liste
+  ({ severity, message, location, code, source }) zusammengefasst.
 
 ### Neue Endpunkte
 

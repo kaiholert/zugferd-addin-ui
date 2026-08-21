@@ -137,15 +137,29 @@ function normalizeSeverity(raw) {
 
 /**
  * Durchsucht das geparste Report-XML rekursiv (Namespace-Präfixe wurden beim
- * Parsen bereits entfernt) nach:
- *   - <valid>true|false</valid>  – Gesamt-Validitätsflags (Schema-/Schematron-Stufe)
- *   - <failed-assert>/<successful-report>  – Schematron-Regelverstöße (SVRL)
- *   - <message level="error|warning|...">  – XML-Schema-Meldungen (XOEV-Report-Format)
+ * Parsen bereits entfernt) nach dem tatsächlichen VARL-Reportformat des KoSIT
+ * Validators 1.6.2 (empirisch anhand echter Reports ermittelt, nicht nur aus
+ * generischer Schematron-/XOEV-Doku geraten):
+ *
+ *   - <rep:report valid="true|false">          – NICHT das Gesamturteil! Kann
+ *     "false" sein, obwohl das Dokument als "ACCEPTABLE" durchgeht (z.B. bei
+ *     reinen Warnungen). Wird hier bewusst NICHT als Verdikt verwendet.
+ *   - <rep:assessment><rep:accept|reject>      – das tatsächliche, maßgebliche
+ *     Verdikt (entspricht der "Acceptance"-Spalte der KoSIT-CLI-Ausgabe).
+ *   - <rep:noScenarioMatched>                  – Guideline-ID/Dokumenttyp
+ *     wurde von keinem Prüfszenario erkannt (führt zu <rep:reject>, aber ohne
+ *     <rep:message>-Einträge – daher eigene Behandlung nötig).
+ *   - <rep:scenarioMatched><s:scenario><s:name> – Name des erkannten Profils.
+ *   - <rep:message level="error|warning|..." xpathLocation="..." code="...">
+ *     TEXT</rep:message>  – die eigentlichen Schema-/Schematron-Befunde.
+ *   - <failed-assert>/<successful-report> (klassisches SVRL) – zusätzlich als
+ *     Fallback unterstützt, falls eine andere Validator-Konfiguration/Version
+ *     rohes SVRL statt des rep:message-Formats liefert.
  */
-function walkReport(node, validFlags, messages) {
+function walkReport(node, ctx) {
   if (node == null) return;
   if (Array.isArray(node)) {
-    for (const n of node) walkReport(n, validFlags, messages);
+    for (const n of node) walkReport(n, ctx);
     return;
   }
   if (typeof node !== 'object') return;
@@ -153,41 +167,45 @@ function walkReport(node, validFlags, messages) {
   for (const key of Object.keys(node)) {
     const value = node[key];
 
-    if (key === 'valid') {
-      const items = Array.isArray(value) ? value : [value];
-      for (const it of items) {
-        const t = extractText(it).toLowerCase();
-        if (t === 'true' || t === 'false') validFlags.push(t === 'true');
-      }
-    } else if (key === 'failed-assert' || key === 'successful-report') {
-      const items = Array.isArray(value) ? value : [value];
-      for (const item of items) {
-        const flag = (item && (item['@_flag'] || item['@_role'])) || (key === 'failed-assert' ? 'error' : 'info');
-        messages.push({
-          severity: normalizeSeverity(flag),
-          message:  extractText(item && item.text) || '(keine Meldung im Report)',
-          location: item && item['@_location'],
-          test:     item && item['@_test'],
-          source:   'schematron',
-        });
-      }
+    if (key === 'accept') {
+      ctx.accepted = true;
+    } else if (key === 'reject') {
+      ctx.accepted = false;
+    } else if (key === 'noScenarioMatched') {
+      ctx.noScenarioMatched = true;
+    } else if (key === 'scenario' && value && typeof value === 'object' && value.name && !ctx.scenarioName) {
+      const name = extractText(value.name);
+      if (name) ctx.scenarioName = name;
     } else if (key === 'message') {
       const items = Array.isArray(value) ? value : [value];
       for (const item of items) {
         const text = extractText(item);
         if (!text) continue;
-        const level = item && typeof item === 'object' ? (item['@_level'] || item['@_type']) : undefined;
-        messages.push({
+        const level = item && typeof item === 'object' ? item['@_level'] : undefined;
+        ctx.messages.push({
           severity: normalizeSeverity(level),
           message:  text,
-          location: item && typeof item === 'object' ? (item['@_xpath'] || item['@_location']) : undefined,
-          source:   'schema',
+          location: item && typeof item === 'object' ? (item['@_xpathLocation'] || item['@_xpath'] || item['@_location']) : undefined,
+          code:     item && typeof item === 'object' ? item['@_code'] : undefined,
+          source:   'schematron',
+        });
+      }
+    } else if (key === 'failed-assert' || key === 'successful-report') {
+      // Fallback fuer klassisches SVRL-Format (andere Validator-Versionen/Konfigurationen)
+      const items = Array.isArray(value) ? value : [value];
+      for (const item of items) {
+        const flag = (item && (item['@_flag'] || item['@_role'])) || (key === 'failed-assert' ? 'error' : 'info');
+        ctx.messages.push({
+          severity: normalizeSeverity(flag),
+          message:  extractText(item && item.text) || '(keine Meldung im Report)',
+          location: item && item['@_location'],
+          source:   'schematron',
         });
       }
     }
 
     if (value && typeof value === 'object') {
-      walkReport(value, validFlags, messages);
+      walkReport(value, ctx);
     }
   }
 }
@@ -285,15 +303,27 @@ async function validateXml(xmlString, cfg, opts = {}) {
     };
   }
 
-  const validFlags = [];
-  const messages   = [];
-  walkReport(parsed, validFlags, messages);
+  const ctx = { accepted: null, noScenarioMatched: false, scenarioName: null, messages: [] };
+  walkReport(parsed, ctx);
 
+  // Kein Prüfszenario erkannt (Guideline-ID unbekannt) => eigene, verständliche
+  // Meldung, da der Report in diesem Fall keine <rep:message>-Einträge enthält.
+  if (ctx.noScenarioMatched) {
+    ctx.messages.push({
+      severity: 'error',
+      message:  'Kein passendes Prüfszenario gefunden – die Guideline-ID (Profil) im XML wird von der Validator-Konfiguration nicht erkannt.',
+      source:   'scenario',
+    });
+  }
+
+  const { messages } = ctx;
   const errorCount   = messages.filter(m => m.severity === 'error').length;
   const warningCount = messages.filter(m => m.severity === 'warning').length;
-  const valid = validFlags.length > 0
-    ? (validFlags.every(Boolean) && errorCount === 0)
-    : errorCount === 0;
+  // Massgeblich ist das <rep:accept>/<rep:reject>-Verdikt (entspricht der
+  // "Acceptance"-Spalte der KoSIT-CLI), NICHT das rep:report[@valid]-Attribut -
+  // das kann "false" sein obwohl das Dokument insgesamt akzeptiert wird
+  // (z.B. bei reinen Warnungen ohne echte Fehler).
+  const valid = ctx.accepted !== null ? ctx.accepted : errorCount === 0;
 
   let persistedReportPath = null;
   if (opts.persistDir) {
@@ -315,6 +345,7 @@ async function validateXml(xmlString, cfg, opts = {}) {
     errorCount,
     warningCount,
     messages,
+    scenarioName: ctx.scenarioName,
     reportXmlPath: persistedReportPath,
     exitCode: run.code,
   };

@@ -15,7 +15,12 @@
 const PROFILES = {
   MINIMUM:   { urn: 'urn:factur-x.eu:1p0:minimum',   level: 'MINIMUM' },
   BASIC_WL:  { urn: 'urn:factur-x.eu:1p0:basicwl',   level: 'BASIC WL' },
-  EN16931:   { urn: 'urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:en16931', level: 'EN 16931' },
+  // Bewusst die "nackte" URN ohne #compliant#...-Zusatz: das ist der offizielle
+  // Guideline-ID-Wert für das Comfort/EN16931-Profil (Factur-X 1.0 Spezifikation).
+  // Mit KoSIT Validator + validator-configuration-zugferd verifiziert: die
+  // #compliant#-Variante wird von dessen Szenario-Matching NICHT erkannt
+  // ("kein Pruefszenario gegriffen") und faellt fälschlich durch die Prüfung.
+  EN16931:   { urn: 'urn:cen.eu:en16931:2017', level: 'EN 16931' },
   EXTENDED:  { urn: 'urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended', level: 'EXTENDED' },
 };
 
